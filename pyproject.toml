@@ -1,0 +1,19 @@
+[project]
+name = "round-1"
+version = "0.1.0"
+description = "AI Tai Nang 2026 - Excel QA"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.143.0",
+    "openpyxl>=3.1.5",
+    "pandas>=3.0.6",
+    "pydantic>=2.14.1",
+    "pydantic-settings>=2.15.0",
+    "python-dotenv>=1.2.4",
+    "requests>=2.34.2",
+    "uvicorn>=0.54.0",
+]
+
+[tool.uv]
+package = false
