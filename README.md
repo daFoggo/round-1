@@ -25,7 +25,7 @@ flowchart TD
     subgraph S3["3. Program-Aided Generation & Execution"]
         PR --> LLM["LLM (Qwen3.7-Flash / Gemini)"]
         LLM --> CODE["Sinh mã Python / Pandas code<br/>(Lưu kết quả vào biến 'FINAL_ANSWER')"]
-        CODE --> EXEC["Restricted Python Executor<br/>(Môi trường giới hạn builtins, timeout 10s)"]
+        CODE --> EXEC["Restricted Python Executor<br/>(Môi trường giới hạn builtins, timeout 15s)"]
     end
 
     subgraph S4["4. Self-Correction & Chuẩn hoá đầu ra"]
@@ -106,7 +106,7 @@ Hệ thống được thiết kế hướng tới tập dữ liệu ẩn thực 
 3. **Phân biệt từ khóa có chứa nhau (Word Boundary Matching):**
    - Hướng dẫn LLM bắt buộc sử dụng ranh giới từ `r'\bterm\b'` (ví dụ: `r'\bmen\b'` để không khớp nhầm vào `women`).
 4. **Môi trường thực thi giới hạn (Restricted Execution):**
-   - Chạy với namespace builtins được kiểm soát và timeout 10 giây để chống lặp vô tận và bảo vệ môi trường chấm thi offline.
+   - Chạy với namespace builtins được kiểm soát và timeout 15 giây (SIGALRM trong container Linux) để chống lặp vô tận và bảo vệ môi trường chấm thi offline.
 
 ---
 
@@ -118,7 +118,8 @@ Dự án được tổ chức theo chuẩn kiến trúc hướng module [FastAPI
 round-1/
 ├── app/
 │   ├── __init__.py          # Khởi tạo app package
-│   ├── main.py              # FastAPI Application + CLI Entrypoint
+│   ├── main.py              # FastAPI Application (tuỳ chọn, không dùng khi chấm)
+│   ├── cli.py               # CLI chấm thi: --xlsx-dir/--queries/--output/--openrouter-*
 │   ├── config.py            # Quản lý Settings tập trung bằng pydantic-settings
 │   ├── dependencies.py      # Dependency injection (get_qa_pipeline, get_settings)
 │   ├── models/              # Pydantic Schemas định kiểu nghiêm ngặt
@@ -135,80 +136,85 @@ round-1/
 │       ├── __init__.py
 │       ├── health.py        # GET /health
 │       └── qa.py            # POST /qa/ask, POST /qa/batch
-├── main.py                  # CLI Wrapper ở root tương thích dòng lệnh thực thi
+├── main.py                  # ENTRYPOINT của Docker image (gọi app.cli)
 ├── evaluate.py              # Script đánh giá Exact Match trên 20 câu mẫu (Dev Set)
 ├── unseen_evaluation.py     # Script đánh giá độc lập trên 25 câu hỏi Unseen (Test Set)
 ├── unseen_evaluation_report.json # Báo cáo chi tiết kết quả kiểm thử Unseen
 ├── .env.example             # File mẫu cấu hình biến môi trường an toàn
-├── Dockerfile               # Dockerfile tối ưu đa tầng với uv
-├── docker-compose.yml       # Docker Compose triển khai độc lập
-├── pyproject.toml           # Quản lý dự án với uv
+├── Dockerfile               # Image linux/amd64, ENTRYPOINT ["python", "main.py"]
+├── docker-compose.yml       # Mô phỏng hệ thống chấm (/input read-only, 1 GB RAM)
+├── scripts/
+│   ├── validate_submission.py  # Kiểm tra định dạng submission.csv (+ Exact Match)
+│   └── package_submission.py   # Đóng gói dist/<team>.zip đúng quy cách
+├── HUONG_DAN_NOP_BAI.md     # Hướng dẫn nộp bài + checklist
 └── requirements.txt         # Danh mục dependencies đã khóa phiên bản
 ```
 
 ---
 
-## 5. Hướng dẫn Cài đặt & Sử dụng
+## 5. Hướng dẫn Cài đặt & Sử dụng (chỉ dùng Docker)
 
-### 5.1. Cài đặt môi trường
+> Quy cách nộp bài và checklist đầy đủ: [`HUONG_DAN_NOP_BAI.md`](HUONG_DAN_NOP_BAI.md).
 
-Sử dụng `uv` (Khuyên dùng - Cài đặt nhanh trong vài giây):
+### 5.1. Build image
+
 ```bash
-uv sync
+docker build --platform linux/amd64 -t ai2026-tableqa .
 ```
 
-Hoặc sử dụng `pip`:
+### 5.2. Chạy giống hệ thống chấm
+
+Image khai báo `ENTRYPOINT ["python", "main.py"]` và nhận đúng 6 tham số của BTC:
+
 ```bash
-pip install -r requirements.txt
+docker run --rm --memory 1g -v "$PWD/xlsx_files:/input/xlsx_files:ro" -v "$PWD/queries.json:/input/queries.json:ro" -v "$PWD/output:/output" ai2026-tableqa --xlsx-dir /input/xlsx_files --queries /input/queries.json --output /output/submission.csv --openrouter-key <key> --openrouter-model qwen/qwen3.7-flash --openrouter-base-url https://openrouter.ai/api/v1
 ```
 
-### 5.2. Cấu hình file `.env`
+Hoặc dùng compose (lấy `OPENROUTER_API_KEY` từ `.env`, kết quả ở `output/submission.csv`):
 
-Sao chép `.env.example` thành `.env` tại thư mục gốc:
-```env
-# Khi chấm thi chính thức (sử dụng OpenRouter Qwen3.7-Flash theo quy chế BTC):
-OPENROUTER_API_KEY=your_openrouter_api_key_here
-OPENROUTER_MODEL=qwen/qwen3.7-flash
-LLM_PROVIDER=openrouter
-
-# Hoặc khi thử nghiệm cục bộ với Gemini:
-GEMINI_API_KEY=your_gemini_api_key_here
-GEMINI_MODEL=gemini-3.1-flash-lite
-LLM_PROVIDER=gemini
-```
-
-### 5.3. Chạy chương trình
-
-#### Lệnh chạy chương trình (Khuyến nghị cho kiểm thử & chấm thi):
 ```bash
-uv run python main.py --input_dir xlsx_files --queries queries.json --output submission.csv
+docker compose run --rm grader
 ```
 
-#### Đánh giá trên tập phát triển mẫu 20 câu (Development Evaluation):
+- Log ghi ra **stderr**; `submission.csv` chỉ chứa `id,answer`.
+- Câu hỏi lỗi → answer rỗng, chương trình vẫn ghi đủ mọi id và thoát mã 0.
+- Không có API key trong mã nguồn; `.env` bị loại khỏi image (`.dockerignore`) và khỏi ZIP.
+
+### 5.3. Cấu hình `.env` (chỉ dùng khi phát triển)
+
+Sao chép `.env.example` thành `.env`. Khi chấm thi, key/model/base URL được truyền qua tham số dòng lệnh nên `.env` không cần thiết. Gemini chỉ dùng thử nghiệm cục bộ:
+
 ```bash
-uv run python evaluate.py
+docker run --rm --env-file .env -v "$PWD/xlsx_files:/input/xlsx_files:ro" -v "$PWD/queries.json:/input/queries.json:ro" -v "$PWD/output:/output" ai2026-tableqa --xlsx-dir /input/xlsx_files --queries /input/queries.json --output /output/submission.csv --provider gemini
 ```
 
-#### Đánh giá độc lập trên bộ 25 câu hỏi Unseen (Unseen Benchmark):
+### 5.4. Kiểm tra kết quả & đánh giá
+
 ```bash
-uv run python unseen_evaluation.py
+docker run --rm -v "$PWD/output:/output" --entrypoint python ai2026-tableqa scripts/validate_submission.py --queries queries.json --submission /output/submission.csv --truth sample_submission.csv
 ```
 
-#### Chạy qua Docker:
 ```bash
-# Khởi động dịch vụ trong container
-docker compose up --build -d
-
-# Thực thi sinh file kết quả bên trong container:
-docker compose exec app python main.py --input_dir xlsx_files --queries queries.json --output submission.csv
-
-# Hoặc truy cập Swagger UI trực quan:
-# http://localhost:8000/docs
+docker run --rm --env-file .env --entrypoint python ai2026-tableqa unseen_evaluation.py
 ```
+
+### 5.5. Đóng gói bài nộp
+
+```bash
+docker run --rm -v "$PWD:/src" -w /src --entrypoint python ai2026-tableqa scripts/package_submission.py team001
+```
+
+Tạo `dist/team001.zip` với `Dockerfile` ở gốc, kiểm tra không chứa `.env` và dung lượng ≤ 100 MB.
 
 ---
 
 ## 6. Ghi nhận Thực nghiệm (Experimental Observations)
+
+### 6.0. Lượt chạy kiểm tra trong Docker (2026-10-15)
+* Chạy image `ai2026-tableqa` với `/input` read-only, `--memory 1g`, provider **Gemini** (`gemini-3.1-flash-lite`): **19 / 20** Exact Match, **191.5s** tổng (~9.6s/câu), `submission.csv` hợp lệ.
+* Câu sai `p4_q007`: model lấy trung bình 6 cột trình độ lá (3.35), đáp án chuẩn lấy trung bình cả 8 cột gồm cột Total (3.14).
+* **Thí nghiệm sửa `p4_q007` (không overfit):** bộ [`scripts/ambiguity_eval.py`](scripts/ambiguity_eval.py) gồm 7 câu paraphrase (đáp án tính từ ô Excel; 5 câu "across all", 2 câu loại trừ Total rõ ràng). Mốc gốc: **5/7**. Thử (a) gắn nhãn cột `[subtotal]` vào summary, (b) thêm quy tắc "đọc theo nghĩa đen" vào prompt, (c) ghi chú diễn giải trong summary → chỉ đạt **2–3/7** vì Gemini flash-lite dùng nhãn để *loại* cột Total. **Đã hoàn tác cả ba**; không có thay đổi nào ở prompt/preprocessor. Câu `p4_q007` giữ nguyên là lỗi do đáp án chuẩn mang tính quy ước.
+* ⚠️ **Chưa kiểm tra với `qwen/qwen3.7-flash` qua OpenRouter** (model chấm thi chính thức). Các số liệu 6.1–6.2 bên dưới cũng được đo bằng Gemini.
 
 ### 6.1. Đánh giá trên Tập Kiểm thử Độc lập Unseen (25 câu hỏi mới)
 Để kiểm tra năng lực tổng quát hóa thực sự mà **không dựa dẫm vào 20 câu hỏi mẫu ban đầu**, một bộ benchmark độc lập gồm 25 câu hỏi mới tinh ([`unseen_evaluation.py`](file:///c:/Users/Foggo/Documents/Dev%20projects/ai-tai-nang-2026/round-1/unseen_evaluation.py)) đã được xây dựng, với Ground Truth được trích xuất trực tiếp bằng tọa độ ô `openpyxl`:

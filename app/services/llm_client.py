@@ -11,13 +11,21 @@ class LLMClient:
         provider: Optional[str] = None,
         gemini_key: Optional[str] = None,
         openrouter_key: Optional[str] = None,
-        model: Optional[str] = None
+        model: Optional[str] = None,
+        openrouter_base_url: Optional[str] = None,
     ):
         self.provider = (provider or settings.llm_provider).lower()
         self.gemini_key = gemini_key or settings.gemini_api_key or os.getenv("GEMINI_API_KEY", "")
         self.openrouter_key = openrouter_key or settings.openrouter_api_key or os.getenv("OPENROUTER_API_KEY", "")
         self.openrouter_model = model or settings.openrouter_model
+        self.openrouter_base_url = (openrouter_base_url or settings.openrouter_base_url).rstrip("/")
         self.gemini_model = model or settings.gemini_model
+        # Thống kê token (tiêu chí xếp hạng thứ 3)
+        self.usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "calls": 0}
+
+    @property
+    def active_model(self) -> str:
+        return self.openrouter_model if self.provider == "openrouter" else self.gemini_model
 
     def generate_response(self, prompt: str, system_prompt: Optional[str] = None) -> str:
         if self.provider == "gemini":
@@ -59,6 +67,11 @@ class LLMClient:
                     res = requests.post(url, headers=headers, json=payload, timeout=30)
                     if res.status_code == 200:
                         data = res.json()
+                        meta = data.get("usageMetadata") or {}
+                        self.usage["prompt_tokens"] += int(meta.get("promptTokenCount") or 0)
+                        self.usage["completion_tokens"] += int(meta.get("candidatesTokenCount") or 0)
+                        self.usage["total_tokens"] += int(meta.get("totalTokenCount") or 0)
+                        self.usage["calls"] += 1
                         candidates = data.get("candidates", [])
                         if not candidates:
                             return ""
@@ -79,8 +92,8 @@ class LLMClient:
 
     def _call_openrouter(self, prompt: str, system_prompt: Optional[str] = None) -> str:
         if not self.openrouter_key:
-            raise ValueError("OPENROUTER_API_KEY is not configured.")
-        url = "https://openrouter.ai/api/v1/chat/completions"
+            raise ValueError("OpenRouter API key is not configured (--openrouter-key / OPENROUTER_API_KEY).")
+        url = f"{self.openrouter_base_url}/chat/completions"
         headers = {
             "Authorization": f"Bearer {self.openrouter_key}",
             "Content-Type": "application/json",
@@ -96,15 +109,31 @@ class LLMClient:
             "model": self.openrouter_model,
             "messages": messages,
             "temperature": 0.0,
-            "max_tokens": 2048,
+            "max_tokens": settings.max_output_tokens,
         }
-        res = requests.post(url, headers=headers, json=payload, timeout=40)
-        res.raise_for_status()
-        data = res.json()
-        choices = data.get("choices", [])
-        if not choices:
-            return ""
-        return choices[0].get("message", {}).get("content", "")
+
+        last_error: Optional[Exception] = None
+        for attempt in range(3):
+            try:
+                res = requests.post(url, headers=headers, json=payload, timeout=60)
+                if res.status_code == 429 or res.status_code >= 500:
+                    last_error = requests.HTTPError(f"{res.status_code} from OpenRouter", response=res)
+                    time.sleep(2 * (attempt + 1))
+                    continue
+                res.raise_for_status()
+                data = res.json()
+                usage = data.get("usage") or {}
+                for k in ("prompt_tokens", "completion_tokens", "total_tokens"):
+                    self.usage[k] += int(usage.get(k) or 0)
+                self.usage["calls"] += 1
+                choices = data.get("choices", [])
+                if not choices:
+                    return ""
+                return choices[0].get("message", {}).get("content") or ""
+            except (requests.ConnectionError, requests.Timeout) as e:
+                last_error = e
+                time.sleep(2 * (attempt + 1))
+        raise last_error if last_error else RuntimeError("OpenRouter call failed")
 
     @staticmethod
     def extract_python_code(text: str) -> str:

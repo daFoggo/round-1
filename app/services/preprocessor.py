@@ -293,6 +293,7 @@ def parse_workbook(file_path: str) -> Dict[str, pd.DataFrame]:
 
     return sheets_df
 
+
 def generate_table_summary(sheets_df: Dict[str, pd.DataFrame]) -> str:
     """Tạo tóm tắt cấu trúc bảng chi tiết kèm danh sách Row_Path cho LLM prompt."""
     summary_lines = []

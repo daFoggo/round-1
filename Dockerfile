@@ -1,20 +1,20 @@
-FROM python:3.12-slim
+FROM --platform=linux/amd64 python:3.12-slim
 
-# Install uv for fast dependency management
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
 
-WORKDIR /workspace
+WORKDIR /app
 
-# Copy dependency files first to cache layer
-COPY pyproject.toml .
+# Cài thư viện trước để tận dụng cache layer
 COPY requirements.txt .
+RUN pip install -r requirements.txt
 
-# Install dependencies using uv
-RUN uv pip install --system -r requirements.txt
-
-# Copy source code and files
+# Mã nguồn (secrets bị loại bởi .dockerignore)
 COPY . .
 
-# Default command: chạy FastAPI server (nếu muốn dùng web/API)
-# Có thể override để chạy CLI: python main.py --input_dir xlsx_files --queries queries.json --output submission.csv
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Hệ thống chấm gọi:
+#   --xlsx-dir /input/xlsx_files --queries /input/queries.json --output /output/submission.csv
+#   --openrouter-key <key> --openrouter-model qwen/qwen3.7-flash --openrouter-base-url https://openrouter.ai/api/v1
+ENTRYPOINT ["python", "main.py"]

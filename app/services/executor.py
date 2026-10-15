@@ -1,5 +1,7 @@
 import io
+import signal
 import sys
+import threading
 import traceback
 import datetime
 import re
@@ -7,6 +9,14 @@ import pandas as pd
 import openpyxl
 from typing import Dict, Any, Tuple, Optional
 from app.config import settings
+
+
+class ExecutionTimeout(Exception):
+    pass
+
+
+def _raise_timeout(signum, frame):
+    raise ExecutionTimeout("Generated code exceeded the execution time limit.")
 
 def execute_generated_code(
     code: str,
@@ -27,11 +37,18 @@ def execute_generated_code(
         "FINAL_ANSWER": None,
     }
 
+    # Timeout bằng SIGALRM (Linux/Docker, main thread); nơi khác chạy không giới hạn
+    use_alarm = hasattr(signal, "SIGALRM") and threading.current_thread() is threading.main_thread()
+    old_handler = None
+
     stdout_buf = io.StringIO()
     old_stdout = sys.stdout
     sys.stdout = stdout_buf
 
     try:
+        if use_alarm:
+            old_handler = signal.signal(signal.SIGALRM, _raise_timeout)
+            signal.alarm(timeout)
         exec(code, local_env, local_env)
         final_ans = local_env.get("FINAL_ANSWER")
         stdout_output = stdout_buf.getvalue().strip()
@@ -44,4 +61,7 @@ def execute_generated_code(
         tb = traceback.format_exc()
         return None, tb
     finally:
+        if use_alarm:
+            signal.alarm(0)
+            signal.signal(signal.SIGALRM, old_handler)
         sys.stdout = old_stdout

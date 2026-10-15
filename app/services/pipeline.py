@@ -91,8 +91,19 @@ def is_invalid_result(res: Any, err: Optional[str]) -> bool:
     return False
 
 class QAPipeline:
-    def __init__(self, provider: Optional[str] = None):
-        self.llm = LLMClient(provider=provider)
+    def __init__(
+        self,
+        provider: Optional[str] = None,
+        openrouter_key: Optional[str] = None,
+        openrouter_model: Optional[str] = None,
+        openrouter_base_url: Optional[str] = None,
+    ):
+        self.llm = LLMClient(
+            provider=provider,
+            openrouter_key=openrouter_key,
+            model=openrouter_model,
+            openrouter_base_url=openrouter_base_url,
+        )
         self.parsed_cache: Dict[str, Dict[str, pd.DataFrame]] = {}
         self.max_retries = settings.max_retries
 

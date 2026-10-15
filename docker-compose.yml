@@ -1,12 +1,27 @@
+# Mô phỏng hệ thống chấm: /input read-only, kết quả ghi ra ./output/submission.csv
+# OPENROUTER_API_KEY lấy từ file .env (docker compose tự đọc để thay biến).
 services:
-  app:
-    build: .
-    container_name: ai-tai-nang-excel-qa
-    ports:
-      - "8000:8000"
-    env_file:
-      - .env
+  grader:
+    build:
+      context: .
+      platform: linux/amd64
+    image: ai2026-tableqa
+    mem_limit: 1g
+    cpus: 6
     volumes:
-      - .:/workspace
-    # Lệnh mặc định chạy FastAPI server:
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+      - ./xlsx_files:/input/xlsx_files:ro
+      - ./queries.json:/input/queries.json:ro
+      - ./output:/output
+    command:
+      - --xlsx-dir
+      - /input/xlsx_files
+      - --queries
+      - /input/queries.json
+      - --output
+      - /output/submission.csv
+      - --openrouter-key
+      - ${OPENROUTER_API_KEY:?Set OPENROUTER_API_KEY in .env}
+      - --openrouter-model
+      - qwen/qwen3.7-flash
+      - --openrouter-base-url
+      - https://openrouter.ai/api/v1

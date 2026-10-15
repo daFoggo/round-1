@@ -5,8 +5,8 @@ class Settings(BaseSettings):
     app_name: str = "AI Tai Nang 2026 - Excel QA"
     debug: bool = False
     
-    # Provider: 'gemini' or 'openrouter'
-    llm_provider: str = "gemini"
+    # Provider: 'openrouter' (chấm thi chính thức) hoặc 'gemini' (thử nghiệm cục bộ)
+    llm_provider: str = "openrouter"
     
     # Gemini Configuration
     gemini_api_key: Optional[str] = None
@@ -15,9 +15,11 @@ class Settings(BaseSettings):
     # OpenRouter Configuration (for official competition grading)
     openrouter_api_key: Optional[str] = None
     openrouter_model: str = "qwen/qwen3.7-flash"
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
     
     # Pipeline Settings
     max_retries: int = 2
+    max_output_tokens: int = 2048
     execution_timeout: int = 15
 
     model_config = SettingsConfigDict(

@@ -24,3 +24,11 @@ Thumbs.db
 
 # Logs and test artifacts
 *.log
+
+# Build / submission artefacts
+dist/
+output/
+*.zip
+
+# Excel lock files
+~$*
