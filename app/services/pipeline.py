@@ -5,6 +5,7 @@ import pandas as pd
 
 from app.config import settings
 from .preprocessor import parse_workbook, parse_raw_workbook, generate_table_summary
+from .linker import link_entities
 from .llm_client import LLMClient
 from .executor import execute_generated_code
 from .formatter import format_answer
@@ -23,6 +24,7 @@ TABLE STRUCTURE & CONVENTIONS:
 1. Column `Row_Path`: Contains the hierarchical path of the row, combining section and item (e.g., 'Division North | Department A | Team 1', 'Category X | Sub-category Y').
    - To find items (categories, occupations, age groups, statuses), filter `df['Row_Path']` or the first column using case-insensitive substring search: `.str.contains('...', case=False, na=False)`.
    - The row's OWN label is the LAST segment of `Row_Path` (`df['Row_Path'].str.split(' | ', regex=False).str[-1]`); the earlier segments are its parents. When a question asks for a label (a size class, group, category...), take it from there.
+   - If the user message contains "ENTITY LINKS", they are the real row labels / columns of the tables that the question mentions. Filter rows with those exact `Row_Path` strings (`==` or `.str.endswith(' | label')`) instead of loose `.str.contains`, pick the group or section the question refers to when the same label appears in several groups (e.g. 'TOTAL' or all races combined vs one race), and use the listed column names.
 2. Columns `Section` / `Sub_Section`: coarse grouping helpers that are often empty. Do NOT rely on them; rely on `Row_Path`.
 3. Column names: Multi-level column headers joined by ' | ' (e.g., '2024 | Quarter 1 | Revenue', 'Metric Group | Measure Name').
 
@@ -149,11 +151,13 @@ class QAPipeline:
         start_time = time.time()
         dfs = self.get_parsed_workbook(file_path)
         table_summary = generate_table_summary(dfs)
+        entity_links = link_entities(query, dfs)
 
         user_prompt = f"""File: {os.path.basename(file_path)}
 
 TABLE SUMMARY:
 {table_summary}
+{entity_links}
 
 QUESTION:
 "{query}"
