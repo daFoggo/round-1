@@ -203,7 +203,7 @@ def parse_table_block(
             continue  # dòng chỉ gồm năm (2022 | 2023 ...) là header, dữ liệu bắt đầu ở dòng sau
         placeholders = sum(1 for c in range(2, max_col + 1) if is_placeholder(grid.get((r, c))))
         if nums >= 2 or (nums >= 1 and placeholders >= 1):
-            r_next_strings = sum(1 for c in range(2, max_col + 1) if isinstance(grid.get((r+1, c)), str) and len(str(grid.get((r+1, c)))) > 3 and parse_numeric(grid.get((r+1, c))) is None and not is_placeholder(grid.get((r+1, c))))
+            r_next_strings = sum(1 for c in range(2, max_col + 1) if is_num_or_date(grid.get((r, c))) and isinstance(grid.get((r+1, c)), str) and len(str(grid.get((r+1, c)))) > 3 and parse_numeric(grid.get((r+1, c))) is None and not is_placeholder(grid.get((r+1, c))))
             if r_next_strings >= 2:
                 continue
             data_start = r
@@ -508,6 +508,38 @@ def parse_raw_workbook(file_path: str) -> Dict[str, pd.DataFrame]:
         df = pd.DataFrame(cleaned, index=range(1, len(cleaned) + 1), columns=range(1, ws.max_column + 1))
         out[ws.title] = df
     return out
+
+
+def suspicious_sheets(dfs: Dict[str, pd.DataFrame], raw_dfs: Dict[str, pd.DataFrame]) -> List[str]:
+    """Tên các sheet mà bảng đã parse có dấu hiệu sai cấu trúc (không phụ thuộc nội dung cụ thể):
+    ít dòng dữ liệu so với số dòng thực của sheet, tên cột chứa cả dữ liệu, hoặc phần lớn cột không có tên."""
+    flagged = []
+    for sheet, raw in raw_dfs.items():
+        raw_rows = int(raw.notna().any(axis=1).sum())
+        tables = [d for k, d in dfs.items() if k == sheet or k.startswith(f"{sheet} - ")]
+        if not tables or raw_rows < 6:
+            continue
+        parsed_rows = sum(len(d) for d in tables)
+        ncols = sum(max(d.shape[1] - 3, 0) for d in tables) or 1
+        generic = sum(1 for d in tables for c in d.columns[3:] if re.fullmatch(r"Col_\d+", str(c)))
+        wide_names = sum(1 for d in tables for c in d.columns[3:] if str(c).count(" | ") >= 6)
+        if parsed_rows * 3 < raw_rows or wide_names or generic * 10 >= ncols * 4:
+            flagged.append(sheet)
+    return flagged
+
+
+def raw_grid_preview(raw: pd.DataFrame, max_rows: int = 40, max_cols: int = 14, cell_chars: int = 24) -> str:
+    """Bản xem lưới ô nguyên bản dạng văn bản (chỉ số dòng/cột = số dòng/cột Excel) cho sheet nghi ngờ."""
+    lines = []
+    for idx, row in raw.iloc[:, :max_cols].iterrows():
+        cells = ["" if pd.isna(v) else str(v).replace("\n", " ").strip()[:cell_chars] for v in row.tolist()]
+        if any(cells):
+            lines.append(f"r{idx}: " + " | ".join(cells))
+        if len(lines) >= max_rows:
+            lines.append("...")
+            break
+    return "\n".join(lines)
+
 
 def generate_table_summary(sheets_df: Dict[str, pd.DataFrame]) -> str:
     """Tạo tóm tắt cấu trúc bảng chi tiết kèm danh sách Row_Path cho LLM prompt."""

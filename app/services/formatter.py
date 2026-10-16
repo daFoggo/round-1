@@ -10,6 +10,9 @@ def format_answer(raw: Any, query: str) -> str:
 
     q_lower = query.lower()
 
+    if type(raw).__name__ in ("bool", "bool_"):  # kết quả so sánh -> câu hỏi Yes/No
+        return "Yes" if raw else "No"
+
     if isinstance(raw, (list, tuple)):
         if "two integer" in q_lower or "separated by a comma" in q_lower:
             cleaned_items = []

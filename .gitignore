@@ -33,3 +33,6 @@ output/
 # Excel lock files
 ~$*
 drive-download-*/
+
+data/external/
+data/p5/

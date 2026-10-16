@@ -282,13 +282,33 @@ Tất cả số liệu dưới đây dùng **`qwen/qwen3.7-flash` qua OpenRouter
 3. Chỉ giữ thay đổi khi sửa một nguyên nhân tất định đã xác nhận hoặc trung bình nhiều lần chạy tăng hơn mức nhiễu (~1 câu); còn lại gỡ ngay.
 4. Dừng khi không còn lỗi hệ thống.
 
+### 6.5. Nguồn của bộ công khai và đánh giá ngoài (`data/p5`)
+
+- **Nguồn đã xác minh** (so nội dung ô, Jaccard = 1,0): `p2_t01–t06` và `p4_t02–t10` là các bảng của [RealHiTBench](https://github.com/cspzyy/RealHiTBench) ([arXiv:2506.13405](https://arxiv.org/abs/2506.13405), [dữ liệu](https://huggingface.co/datasets/spzy/RealHiTBench)); câu hỏi do BTC viết lại. `p2_t11–t15` là bảng Statistics Canada viết thường (nguồn mà [HiTab](https://github.com/microsoft/hitab) cũng dùng), `p2_t09–t10` là bảng báo cáo tài chính; nguồn cụ thể của hai nhóm này chưa xác minh.
+- **`data/p5`** (50 câu, 50 bảng) dựng bằng `scripts/build_external_set.py` từ RealHiTBench (CC BY-NC 4.0: chỉ để đánh giá cục bộ, nằm trong `.gitignore`, không vào gói nộp): loại các bảng trùng p2/p4, mỗi bảng một câu, phân tầng theo nguồn, đáp án lấy từ `ProcessedAnswer`, nối câu "Answer with only the final value". Chấm bằng `bench.py --lenient` (chuẩn hoá chữ thường, khoảng trắng, dấu phẩy ngàn, `14.0` = `14`).
+- **Đây là phép đo độc lập đầu tiên**: p2/p4 đã dùng để chỉnh pipeline. Đáp án RealHiTBench do LLM gán nên có nhiễu/quy ước khác (làm tròn, câu mơ hồ); điểm p5 là cận dưới, không so trực tiếp với p2/p4.
+
+| Cấu hình (mỗi bộ 2 lần chạy, 12 tiến trình) | p5 /50 | p2 /30 | p4 /20 |
+| :--- | :-: | :-: | :-: |
+| Trước các thay đổi dưới đây | 15, 17 | 29 – 30 | 19 – 20 |
+| + lưới ô thô cho sheet bị nghi parse sai, bool → Yes/No | 18, 19 | — | 19, 19 |
+| + sửa dò dòng dữ liệu (chuỗi chỉ tính là header nhiều tầng khi nằm ở cột có số), thử lại khi đáp án là `0` hoặc "not found", prompt thử lại kèm bảng | **23, 20** | 30, 29 | 18, 19 |
+
+Thay đổi giữ lại (đều tổng quát, không gắn với file/câu hỏi nào):
+- `suspicious_sheets` + `raw_grid_preview`: sheet có ít dòng parse được so với dòng thực, tên cột chứa dữ liệu, hoặc ≥ 40% cột không có tên → thêm bản xem ô thô vào prompt. p2: 0 sheet bị gắn cờ, p4: 1, p5: 13/50; nên không tốn thêm token cho các bảng đã parse tốt.
+- `preprocessor.parse_table_block`: dòng kế tiếp chỉ coi là header nhiều tầng khi chuỗi nằm ở cột mà dòng hiện tại có số (sửa các bảng có ô `No contacts` hoặc nhãn văn bản bị nuốt vào tên cột). Snapshot `Row_Path` của 76 file: chỉ 4 bảng p5 đổi, p2/p4 giữ nguyên.
+- `pipeline`: đáp án `Not found/No data/Unknown/Error...` hoặc `0` (một lần) kích hoạt thử lại; lệnh sửa lỗi nay kèm TABLE SUMMARY và lưới ô thô (trước đó model sửa mà không thấy bảng).
+- `formatter`: kết quả bool → `Yes`/`No`.
+
+Lỗi p5 còn lại (25 câu sai cả hai lần) gồm: bố cục rất lạ (sheet nhiều bảng lồng, ma trận +/-), đáp án gốc theo quy ước khác (làm tròn `4.12` so với `4.13`, `97.72` so với `97.73`), và câu mơ hồ. Chưa tách bạch được phần nào là lỗi thật.
+
 ## 7. Vấn đề còn mở (Open Issues)
 
 **Còn mở**
 
 1. **Nhiễu giữa các lần chạy (±1–2 câu).** Các câu sai lẻ tẻ thay đổi giữa các lần (p2: q1, q12–q15, q20, q24, q27; p4: q008, q016, q019). Nguyên nhân: Qwen không xác định hoàn toàn (nhà cung cấp duy nhất, `seed` không giúp); model đôi khi chọn nhầm ô hoặc dùng regex không an toàn. Biểu quyết và `seed` đã thử, không hiệu quả; execution-based voting (ReAcTable) là hướng tương đương nên chưa áp dụng. Chấp nhận như giới hạn: điểm hiện 96–99%.
 2. **Entity linking cần nhãn của bảng xuất hiện nguyên văn (hoặc đủ các từ) trong câu hỏi.** Giới hạn do thiết kế; khi không khớp, model vẫn thấy bảng tóm tắt như cũ nên chỉ mất phần hỗ trợ.
-3. **Chưa kiểm thử trên tập ẩn thật và chưa có template của BTC.** Mới đo trên 2 bộ công khai (50 câu). Phần tuân thủ FAQ (Câu 04–05: `.xlsx`, nhiều sheet, nhiều ngôn ngữ, `id` số, CSV UTF-8 theo `id`, rỗng khi không trả lời) đã làm; cần đối chiếu lại khi BTC gửi template.
+3. **Chưa kiểm thử trên tập ẩn thật và chưa có template của BTC.** Đã đo trên p2, p4 (50 câu) và p5 ngoài (50 câu, ~43%, xem §6.5); bố cục bảng lạ của RealHiTBench còn là điểm yếu lớn nhất. Phần tuân thủ FAQ (Câu 04–05: `.xlsx`, nhiều sheet, nhiều ngôn ngữ, `id` số, CSV UTF-8 theo `id`, rỗng khi không trả lời) đã làm; cần đối chiếu lại khi BTC gửi template.
 
 **Đã đóng**
 

@@ -9,6 +9,7 @@ import argparse
 import csv
 import json
 import os
+import re
 import sys
 import time
 from collections import defaultdict
@@ -23,11 +24,29 @@ def load_truth(path):
         return {r[0]: r[1] for r in list(csv.reader(f))[1:] if len(r) >= 2}
 
 
+def _norm_answer(s: str) -> str:
+    """Chuẩn hoá giống BTC (chữ thường, bỏ khoảng trắng/dấu thừa, số 14.0 = 14) để bộ ngoài không bị phạt vì định dạng."""
+    s = str(s).strip().lower().replace("%", "").replace("$", "")
+    s = re.sub(r"(?<=\d),(?=\d{3})", "", s)  # dấu phân cách hàng nghìn
+    s = re.sub(r"\s*,\s*", ",", re.sub(r"\s+", " ", s)).strip(" .\"'")
+    try:
+        f = float(s)
+        return f"{round(f, 6):.6f}".rstrip("0").rstrip(".")
+    except ValueError:
+        return s
+
+
+def same(pred: str, truth: str, lenient: bool) -> bool:
+    return _norm_answer(pred) == _norm_answer(truth) if lenient else pred == truth
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--runs", type=int, default=3)
     ap.add_argument("--sets", default="p2,p4")
     ap.add_argument("--out", default="output")
+    ap.add_argument("--workers", type=int, default=12, help="số tiến trình song song khi đo (máy chấm thật dùng mặc định của CLI)")
+    ap.add_argument("--lenient", action="store_true", help="so khớp sau chuẩn hoá (dùng cho bộ ngoài p5)")
     args = ap.parse_args()
     os.makedirs(args.out, exist_ok=True)
 
@@ -41,10 +60,10 @@ def main() -> None:
         for i in range(1, args.runs + 1):
             out = f"{args.out}/bench_{name}_{i}.csv"
             t = time.time()
-            cli.run_cli(["--xlsx-dir", f"{data}/xlsx_files", "--queries", f"{data}/queries.json", "--output", out])
+            cli.run_cli(["--xlsx-dir", f"{data}/xlsx_files", "--queries", f"{data}/queries.json", "--output", out, "--workers", str(args.workers)])
             times.append(time.time() - t)
             pred = load_truth(out)
-            bad = [k for k in truth if pred.get(k, "") != truth[k]]
+            bad = [k for k in truth if not same(pred.get(k, ""), truth[k], args.lenient)]
             scores.append(len(truth) - len(bad))
             for k in bad:
                 wrong[k].append(pred.get(k, ""))

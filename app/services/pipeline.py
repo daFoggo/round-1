@@ -1,10 +1,12 @@
 import os
+import re
 import time
 from typing import Dict, Any, Optional
 import pandas as pd
 
 from app.config import settings
-from .preprocessor import parse_workbook, parse_raw_workbook, generate_table_summary
+from .preprocessor import (parse_workbook, parse_raw_workbook, generate_table_summary, suspicious_sheets,
+                           raw_grid_preview)
 from .linker import link_entities
 from .llm_client import LLMClient
 from .executor import execute_generated_code
@@ -104,7 +106,23 @@ def is_invalid_result(res: Any, err: Optional[str]) -> bool:
         return True
     if isinstance(res, str) and res.strip().lower() in ['', 'nan', 'none']:
         return True
+    if isinstance(res, str) and _FAILURE_TEXT.match(res.strip()):
+        return True
     return False
+
+
+# Câu trả lời dạng 'không tìm thấy' do model tự viết khi bộ lọc không khớp dòng nào: coi như thất bại để thử lại
+_FAILURE_TEXT = re.compile(
+    r"^(error|not found|no data|no valid|data not|unknown|n/?a$|not available|row not|rows not|column not|cannot|"
+    r"could not|unable|insufficient)", re.IGNORECASE)
+
+
+def is_zero_result(res: Any) -> bool:
+    """0 thường là dấu hiệu bộ lọc rỗng (sum của tập rỗng); chỉ nghi ngờ một lần rồi chấp nhận nếu vẫn ra 0."""
+    try:
+        return not isinstance(res, bool) and float(str(res).replace(",", "")) == 0.0
+    except (TypeError, ValueError):
+        return False
 
 class QAPipeline:
     def __init__(
@@ -155,6 +173,11 @@ class QAPipeline:
         dfs = self.get_parsed_workbook(file_path)
         table_summary = generate_table_summary(dfs)
         entity_links = link_entities(query, dfs)
+        raw_dfs = self.get_raw_workbook(file_path)
+        for sheet in suspicious_sheets(dfs, raw_dfs)[:2]:
+            table_summary += (f"\n\nWARNING: the parsed tables of sheet '{sheet}' look unreliable. RAW CELL GRID of "
+                              f"`raw_dfs['{sheet}']` (r<N> = Excel row N, cells separated by ' | ', empty cells blank; "
+                              f"column positions are kept):\n{raw_grid_preview(raw_dfs[sheet])}")
 
         user_prompt = f"""File: {os.path.basename(file_path)}
 
@@ -171,21 +194,36 @@ Write Python code to compute the answer and assign it to `FINAL_ANSWER`.
         raw_response = self.llm.generate_response(user_prompt, system_prompt=SYSTEM_PROMPT)
         code = self.llm.extract_python_code(raw_response)
 
-        raw_dfs = self.get_raw_workbook(file_path)
         raw_result, error_trace, stdout = execute_generated_code(code, dfs, file_path, raw_dfs=raw_dfs)
         retries_used = 0
 
-        while is_invalid_result(raw_result, error_trace) and retries_used < retries_limit:
+        zero_checked = False
+        while retries_used < retries_limit and (
+            is_invalid_result(raw_result, error_trace) or (not zero_checked and is_zero_result(raw_result))
+        ):
             retries_used += 1
             if error_trace:
                 reason = error_trace[-1500:]
+            elif is_zero_result(raw_result) and not is_invalid_result(raw_result, error_trace):
+                zero_checked = True
+                reason = ("FINAL_ANSWER is 0, which usually means a filter matched no rows or the wrong cells were "
+                          "read. Re-check the row/column selection against the table summary and the raw cell grid; "
+                          "if 0 is genuinely correct, keep the same logic.")
             else:
                 reason = (f"FINAL_ANSWER was invalid or empty ({repr(raw_result)}). Check your filters on "
                           "df['Row_Path'] and the column names against the table summary; if the parsed table looks "
                           "wrong, use `raw_dfs`.")
             if stdout:
                 reason += f"\n\nYour code printed (use it to correct the code):\n{stdout[-1500:]}"
-            correction_prompt = f"""Your previous code returned an invalid result or failed.
+            retry_grid = "".join(
+                f"\n\nRAW CELL GRID of `raw_dfs['{s}']` (r<N> = Excel row N):\n{raw_grid_preview(raw_dfs[s], max_rows=30)}"
+                for s in list(raw_dfs)[:2] if "RAW CELL GRID" not in table_summary
+            )
+            correction_prompt = f"""TABLE SUMMARY:
+{table_summary[:7000]}
+{entity_links}{retry_grid}
+
+Your previous code returned an invalid result or failed.
 Previous Code:
 ```python
 {code}
