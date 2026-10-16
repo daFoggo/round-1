@@ -293,6 +293,7 @@ Tất cả số liệu dưới đây dùng **`qwen/qwen3.7-flash` qua OpenRouter
 | Trước các thay đổi dưới đây | 15, 17 | 29 – 30 | 19 – 20 |
 | + lưới ô thô cho sheet bị nghi parse sai, bool → Yes/No | 18, 19 | — | 19, 19 |
 | + sửa dò dòng dữ liệu (chuỗi chỉ tính là header nhiều tầng khi nằm ở cột có số), thử lại khi đáp án là `0` hoặc "not found", prompt thử lại kèm bảng | **23, 20** | 30, 29 | 18, 19 |
+| + làm tròn half-up, luật xếp hạng, không tự làm tròn trong code; bỏ "s" số nhiều khi liên kết cột; năm dạng chuỗi/float là header; nhiều cột nhãn chữ + điền xuống ô thưa; gộp các dòng tiêu đề nhóm liên tiếp (3 lần chạy, 24 tiến trình) | **27, 25, 27** | 29, 30, 30 | 19, 20, 19 |
 
 Thay đổi giữ lại (đều tổng quát, không gắn với file/câu hỏi nào):
 - `suspicious_sheets` + `raw_grid_preview`: sheet có ít dòng parse được so với dòng thực, tên cột chứa dữ liệu, hoặc ≥ 40% cột không có tên → thêm bản xem ô thô vào prompt. p2: 0 sheet bị gắn cờ, p4: 1, p5: 13/50; nên không tốn thêm token cho các bảng đã parse tốt.
@@ -300,7 +301,10 @@ Thay đổi giữ lại (đều tổng quát, không gắn với file/câu hỏi
 - `pipeline`: đáp án `Not found/No data/Unknown/Error...` hoặc `0` (một lần) kích hoạt thử lại; lệnh sửa lỗi nay kèm TABLE SUMMARY và lưới ô thô (trước đó model sửa mà không thấy bảng).
 - `formatter`: kết quả bool → `Yes`/`No`.
 
-Lỗi p5 còn lại (25 câu sai cả hai lần) gồm: bố cục rất lạ (sheet nhiều bảng lồng, ma trận +/-), đáp án gốc theo quy ước khác (làm tròn `4.12` so với `4.13`, `97.72` so với `97.73`), và câu mơ hồ. Chưa tách bạch được phần nào là lỗi thật.
+**Phân loại thủ công 25 câu p5 sai cả hai lần** (đọc từng bảng thô, so với đáp án gốc):
+- *Đáp án gốc nhiễu hoặc mơ hồ, không sửa* (~11 câu): câu hỏi lệch bảng (hỏi tôm Ecuador trên bảng cá hồi), phạm vi không rõ (cộng cả các mặt hàng hay chỉ mặt hàng đầu), đáp án cộng trùng (tổng + từng nhóm), định dạng khác (`31 Mar 16`), đáp án ghép (`32.70, Yes`), xếp hạng sai (`1 mg/L, 5 mg/L, 0 mg/L` trong khi số liệu cho `5, 0, 1`).
+- *Lỗi thật, đã sửa hoặc giảm* (6 nhóm): làm tròn hòa nửa (`97.725`→`97.73`, `4.125`→`4.13`, nay half-up thay cho làm tròn nhị phân của float), câu xếp hạng trả một giá trị thay vì danh sách (thêm luật 9), cột `Estimates` không khớp `Estimate` (bỏ "s" số nhiều), bảng có hai cột nhãn chữ (`Set | TNF 24h`, `Region | Purpose`), nhóm cha chỉ thể hiện qua nhiều dòng tiêu đề liên tiếp (`Reference area: X` / `Sector: Y`), dòng năm dạng chuỗi bị coi là dữ liệu và cắt đôi bảng.
+- *Lỗi thật còn lại*: ma trận +/- cần đếm theo cột (q21), bố cục sheet nhiều bảng lồng (q43, q31), model trả nhãn thay vì giá trị (q6), nhóm bảng khó đếm có điều kiện (q34, q49).
 
 ## 7. Vấn đề còn mở (Open Issues)
 

@@ -89,6 +89,18 @@ def _is_code_row(first_val: str, row_info, idx: int) -> bool:
     return bool(first_val) and bool(_CODE_RE.match(first_val)) and row_info[idx]['nums'] == 0
 
 
+def _is_year_value(v: Any) -> bool:
+    """Giá trị là năm (2022, 2022.0 hoặc '2022'): ô tiêu đề năm bị Excel lưu dạng chuỗi/float vẫn là tiêu đề, không phải dữ liệu."""
+    if isinstance(v, bool):
+        return False
+    if isinstance(v, (int, float)):
+        return float(v).is_integer() and 1900 <= v <= 2100
+    if isinstance(v, str):
+        s = v.strip()
+        return len(s) == 4 and s.isdigit() and 1900 <= int(s) <= 2100
+    return False
+
+
 def detect_table_ranges(ws: openpyxl.worksheet.worksheet.Worksheet, grid: Dict[Tuple[int, int], Any], max_row: int, max_col: int) -> List[Tuple[int, int, str]]:
     """
     Phát hiện các khối bảng độc lập trên cùng một worksheet (ví dụ Fiscal years vs Calendar years).
@@ -100,7 +112,7 @@ def detect_table_ranges(ws: openpyxl.worksheet.worksheet.Worksheet, grid: Dict[T
         non_empty = [v for v in vals if v is not None and str(v).strip() != '']
         nums = sum(1 for v in non_empty if isinstance(v, (int, float)) or (isinstance(v, str) and parse_numeric(v) is not None))
         placeholders = sum(1 for v in non_empty if is_placeholder(v))
-        years = sum(1 for v in non_empty if isinstance(v, int) and 1900 <= v <= 2100)
+        years = sum(1 for v in non_empty if _is_year_value(v))
         c1 = str(vals[0]).strip() if vals and vals[0] is not None else ''
         is_note = is_note_row(c1)
         row_info.append({
@@ -296,6 +308,20 @@ def parse_table_block(
             if cand:
                 label_cols = cand
                 label_col_idx = cand[-1]
+        else:
+            # Nhiều cột nhãn dạng chữ liên tiếp ngay từ cột 1 (vd. 'Region | Purpose', 'Set | Time point'), sau đó là cột số
+            cand = []
+            for c in range(1, min(max_col, 4) + 1):
+                if _filled(c) >= 0.2 and _labelish(c):
+                    cand.append(c)
+                else:
+                    break
+            nxt = cand[-1] + 1 if cand else None
+            if len(cand) >= 2 and nxt is not None and nxt <= max_col:
+                nxt_vals = [grid.get((r, nxt)) for r in body_rows if grid.get((r, nxt)) not in (None, '')]
+                if nxt_vals and sum(1 for v in nxt_vals if is_num_or_date(v) or is_placeholder(v)) / len(nxt_vals) >= 0.6:
+                    label_cols = cand
+                    label_col_idx = cand[-1]
 
     # Thụt lề của nhãn (khoảng trắng đầu dòng / alignment.indent) cho bảng không có cột Indent Level
     widths = {}
@@ -310,6 +336,8 @@ def parse_table_block(
         use_indent = len(set(widths.values())) >= 2
     ind_stack: List[Tuple[int, str]] = []
     last_year_label = ""
+    label_carry = [""] * 4
+    prev_row_was_title = False
 
     # 5. Xây dựng Row_Path phân cấp
     data_rows = []
@@ -329,10 +357,15 @@ def parse_table_block(
 
         if len(label_cols) > 1:
             parts = [clean_label(row_raw[c - 1]) for c in label_cols]
+            for j in range(len(parts) - 1):  # cột nhãn thưa (ô gộp/nhóm) bị bỏ trống -> điền xuống từ dòng trên
+                if parts[j]:
+                    label_carry[j] = parts[j]
+                    for k in range(j + 1, len(parts) - 1):
+                        label_carry[k] = ""
+                elif any(parts[j + 1:]) and label_carry[j]:
+                    parts[j] = label_carry[j]
             if parts[0]:
                 last_year_label = parts[0]
-            elif any(parts[1:]):
-                parts[0] = last_year_label  # năm bị bỏ trống ở các dòng quý -> điền xuống
             raw_label = " | ".join(p for p in parts if p)
         else:
             raw_label = clean_label(row_raw[label_col_idx - 1])
@@ -351,10 +384,13 @@ def parse_table_block(
         # Trường hợp 1: Dòng thuần tiêu đề nhóm chính (nums == 0)
         placeholder_count = sum(1 for v in other_vals if is_placeholder(v))
         if raw_label != "" and num_count == 0 and placeholder_count == 0:
-            major_section = raw_label
+            # Các dòng tiêu đề liên tiếp ('Reference area: X', 'Sector: Y') là các cấp của cùng một nhóm
+            major_section = f"{major_section} | {raw_label}" if prev_row_was_title and major_section else raw_label
             sub_section = ""
             ind_stack = []
+            prev_row_was_title = True
             continue
+        prev_row_was_title = False
 
         # Trường hợp 2: Có cột Indent Level (cây phân cấp theo mức thụt lề số)
         if is_indent_col:

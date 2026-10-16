@@ -45,7 +45,8 @@ def main() -> None:
     ap.add_argument("--runs", type=int, default=3)
     ap.add_argument("--sets", default="p2,p4")
     ap.add_argument("--out", default="output")
-    ap.add_argument("--workers", type=int, default=12, help="số tiến trình song song khi đo (máy chấm thật dùng mặc định của CLI)")
+    ap.add_argument("--ids", default="", help="chỉ chạy các id này (phân tách bằng dấu phẩy) để lặp nhanh trên tập câu sai")
+    ap.add_argument("--workers", type=int, default=24, help="số tiến trình song song khi đo (máy chấm thật dùng mặc định của CLI)")
     ap.add_argument("--lenient", action="store_true", help="so khớp sau chuẩn hoá (dùng cho bộ ngoài p5)")
     args = ap.parse_args()
     os.makedirs(args.out, exist_ok=True)
@@ -54,13 +55,20 @@ def main() -> None:
     for name in args.sets.split(","):
         data = f"data/{name}"
         truth = load_truth(f"{data}/sample_submission.csv")
-        queries = {str(q["id"]): q["query"] for q in json.load(open(f"{data}/queries.json", encoding="utf-8-sig"))}
+        all_q = json.load(open(f"{data}/queries.json", encoding="utf-8-sig"))
+        if args.ids:
+            keep = set(args.ids.split(","))
+            all_q = [q for q in all_q if str(q["id"]) in keep]
+            truth = {k: v for k, v in truth.items() if k in keep}
+        queries = {str(q["id"]): q["query"] for q in all_q}
+        queries_path = f"{args.out}/queries_{name}.json"
+        json.dump(all_q, open(queries_path, "w", encoding="utf-8"), ensure_ascii=False)
         wrong = defaultdict(list)
         scores, times = [], []
         for i in range(1, args.runs + 1):
             out = f"{args.out}/bench_{name}_{i}.csv"
             t = time.time()
-            cli.run_cli(["--xlsx-dir", f"{data}/xlsx_files", "--queries", f"{data}/queries.json", "--output", out, "--workers", str(args.workers)])
+            cli.run_cli(["--xlsx-dir", f"{data}/xlsx_files", "--queries", queries_path, "--output", out, "--workers", str(args.workers)])
             times.append(time.time() - t)
             pred = load_truth(out)
             bad = [k for k in truth if not same(pred.get(k, ""), truth[k], args.lenient)]

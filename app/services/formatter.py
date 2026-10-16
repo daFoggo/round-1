@@ -1,4 +1,5 @@
 import re
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import Any
 
 def format_answer(raw: Any, query: str) -> str:
@@ -67,6 +68,12 @@ def format_answer(raw: Any, query: str) -> str:
             except:
                 return nums[0]
 
+    # Câu hỏi không nêu số chữ số thập phân: số float có đuôi dài (3.5557715..., 134017.8888...) làm tròn half-up về 2 chữ số
+    # (4 nếu |x| < 1); số nguyên và số đã gọn được giữ nguyên.
+    num = _as_number(s)
+    if num is not None and not float(num).is_integer() and "." in s and len(s.split(".")[-1]) > 4:
+        return _fixed(num, 2 if abs(num) >= 1 else 4)
+
     return s
 
 
@@ -117,12 +124,22 @@ def _as_number(text: str):
         return None
 
 
+def _fixed(n: float, d: int) -> str:
+    """Làm tròn half-up (như Excel/làm tròn tay) thay vì làm tròn nhị phân của float: 97.725 -> 97.73, 4.125 -> 4.13.
+    Làm tròn trước về 9 chữ số để loại nhiễu dấu phẩy động (97.72499999999999 vẫn là 97.725)."""
+    try:
+        q = Decimal(1).scaleb(-d)
+        return str(Decimal(repr(round(n, 9))).quantize(q, rounding=ROUND_HALF_UP))
+    except (InvalidOperation, ValueError):
+        return f"{n:.{d}f}"
+
+
 def _format_decimals(s: str, d: int):
     """Chỉ định dạng phần số: toàn bộ danh sách số, hoặc số cuối của dạng 'nhóm, số' (không đụng tới số trong tên nhóm)."""
     parts = [p.strip() for p in s.split(", ")] if ", " in s else [s.strip()]
     nums = [_as_number(p) for p in parts]
     if all(n is not None for n in nums):
-        return ", ".join(f"{n:.{d}f}" for n in nums)
+        return ", ".join(_fixed(n, d) for n in nums)
     if nums[-1] is not None and len(parts) >= 2:
-        return ", ".join(parts[:-1] + [f"{nums[-1]:.{d}f}"])
+        return ", ".join(parts[:-1] + [_fixed(nums[-1], d)])
     return None

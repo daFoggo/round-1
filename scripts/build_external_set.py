@@ -98,7 +98,7 @@ def main() -> None:
             urllib.request.urlretrieve(f"{BASE}/tables/{fn}", cached)
         with open(cached, "rb") as src, open(os.path.join(a.out, "xlsx_files", fn), "wb") as dst:
             dst.write(src.read())
-        queries.append({"id": i, "file_name": fn, "query": x["Question"].strip() + a.suffix})
+        queries.append({"id": i, "file_name": fn, "query": x["Question"].strip() + (" Answer with only Yes or No." if x["ProcessedAnswer"].strip().lower() in ("yes", "no") else a.suffix)})
         truth.append((i, x["ProcessedAnswer"].strip(), x["Source"], x["SubQType"]))
 
     with open(os.path.join(a.out, "queries.json"), "w", encoding="utf-8") as f:

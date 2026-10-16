@@ -65,13 +65,17 @@ ROBUST DATA ANALYSIS GUIDELINES:
    - Convention of this contest: when a table has a date of birth AND another event date (e.g. admission), "age", "oldest" and "youngest" mean the age AT that event date (event date minus birth date), never the age relative to today.
    - When computing intervals, age, or elapsed time from dates, parse with `pd.to_datetime(...)` and compute differences (e.g., `.dt.days` or `.dt.total_seconds()`).
 
+8. ROUNDING: when the question asks for a number of decimal places, do NOT round FINAL_ANSWER yourself; keep full precision and keep FINAL_ANSWER a number, not a formatted string (the formatter applies the requested decimals, rounding half up).
+
+9. RANKING / ORDERING: when asked to rank, order or sort items, FINAL_ANSWER is the full ordered list of the item LABELS (e.g. `['B', 'A', 'C']`) in the requested direction, one entry per item that was asked about, without their values unless asked.
+
 GENERAL PROGRAMMING PATTERNS:
 - Pattern A (Aggregating across multiple metric columns for a specific row):
   ```python
   # Filter matching row and compute metric across relevant columns
   row = df[df['Row_Path'].str.contains('Category A', case=False, na=False) & df['Row_Path'].str.contains('Sub-group', case=False, na=False)]
   cols = [c for c in df.columns if 'target_metric' in c.lower()]
-  FINAL_ANSWER = round(row[cols].iloc[0].astype(float).mean(), 2)
+  FINAL_ANSWER = row[cols].iloc[0].astype(float).mean()
   ```
 - Pattern B (Comparing metrics across distinct categories with collision avoidance):
   ```python

@@ -13,12 +13,17 @@ import pandas as pd
 _CJK = re.compile(r'[぀-ヿ㐀-䶿一-鿿가-힯]')
 _STOP = {
     'the', 'and', 'for', 'was', 'were', 'what', 'which', 'how', 'many', 'much', 'with', 'that', 'than', 'from', 'only',
-    'answer', 'number', 'does', 'did', 'are', 'has', 'have', 'all', 'any', 'between', 'each', 'per', 'its', 'their',
+    'answer', 'number', 'does', 'doe', 'did', 'are', 'has', 'have', 'all', 'any', 'between', 'each', 'per', 'its', 'their',
 }
 
 
+def _singular(tok: str) -> str:
+    """Bỏ 's' số nhiều đơn giản để 'estimates' khớp cột 'Estimate' (áp dụng đối xứng cho câu hỏi và nhãn bảng)."""
+    return tok[:-1] if len(tok) > 3 and tok.endswith('s') and not tok.endswith(('ss', 'us', 'is')) else tok
+
+
 def _norm(text: str) -> str:
-    return ' '.join(re.findall(r'\w+', str(text).lower()))
+    return ' '.join(_singular(t) for t in re.findall(r'\w+', str(text).lower()))
 
 
 def _min_len(norm: str) -> int:
