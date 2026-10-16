@@ -284,9 +284,15 @@ Tất cả số liệu dưới đây dùng **`qwen/qwen3.7-flash` qua OpenRouter
 
 ## 7. Vấn đề còn mở (Open Issues)
 
-1. **Nhiễu giữa các lần chạy (±1–2 câu).** Các câu từng sai lẻ tẻ: `p2` q1, q12, q13, q24, q27; `p4_q019`. Nguyên nhân: model đôi khi chọn nhầm ô hoặc dùng regex không an toàn; chưa có biện pháp rẻ nào chứng minh giảm được (biểu quyết và `seed` đều đã thử, không hiệu quả).
-2. **Định dạng đáp án phụ thuộc ngôn ngữ**: bộ định dạng số thập phân chỉ nhận cụm tiếng Anh; câu tiếng Hàn/Trung dựa vào việc model tự định dạng (`14.2` thay vì `14.20` ở p2 q27 thỉnh thoảng). *Giảm nhẹ bởi FAQ Câu 04.1:* BTC chuẩn hoá chữ thường, khoảng trắng, dấu câu và dấu thập phân, và câu hỏi luôn nêu rõ yêu cầu làm tròn/định dạng; vẫn nên in đúng số chữ số thập phân vì chưa rõ `14.2` có bằng `14.20` sau chuẩn hoá hay không.
-3. **Tiền xử lý chưa phủ hết bố cục lạ.** Một số bảng tài chính (`p2_t09`, `p2_t10`) xếp nhóm cha/con chưa chính xác (ví dụ `Total assets...` nằm dưới nhóm `Available-for-sale ...`).
-4. **Entity linking dựa vào việc nhãn của bảng xuất hiện nguyên văn (hoặc đủ các từ) trong câu hỏi**; câu hỏi diễn đạt khác nhiều so với nhãn sẽ không được liên kết.
-5. **Mới đo trên 2 bộ công khai (50 câu)**, chưa kiểm thử trên tập ẩn thật; chưa có **template nộp bài của BTC** để đối chiếu (FAQ Câu 04.2 / 05: BTC sẽ cung cấp template; tập ẩn chỉ `.xlsx`, nhiều sheet, nhiều ngôn ngữ, `id` số tự nhiên, CSV UTF-8 sắp xếp theo `id`, câu không trả lời để rỗng — tất cả CLI đã tuân thủ).
-6. **Chưa đo `reasoning.effort` mức `low`/`medium`** (hiện chỉ so `none` và mặc định bật).
+**Còn mở**
+
+1. **Nhiễu giữa các lần chạy (±1–2 câu).** Các câu sai lẻ tẻ thay đổi giữa các lần (p2: q1, q12–q15, q20, q24, q27; p4: q008, q016, q019). Nguyên nhân: Qwen không xác định hoàn toàn (nhà cung cấp duy nhất, `seed` không giúp); model đôi khi chọn nhầm ô hoặc dùng regex không an toàn. Biểu quyết và `seed` đã thử, không hiệu quả; execution-based voting (ReAcTable) là hướng tương đương nên chưa áp dụng. Chấp nhận như giới hạn: điểm hiện 96–99%.
+2. **Entity linking cần nhãn của bảng xuất hiện nguyên văn (hoặc đủ các từ) trong câu hỏi.** Giới hạn do thiết kế; khi không khớp, model vẫn thấy bảng tóm tắt như cũ nên chỉ mất phần hỗ trợ.
+3. **Chưa kiểm thử trên tập ẩn thật và chưa có template của BTC.** Mới đo trên 2 bộ công khai (50 câu). Phần tuân thủ FAQ (Câu 04–05: `.xlsx`, nhiều sheet, nhiều ngôn ngữ, `id` số, CSV UTF-8 theo `id`, rỗng khi không trả lời) đã làm; cần đối chiếu lại khi BTC gửi template.
+
+**Đã đóng**
+
+- ~~Định dạng đáp án phụ thuộc ngôn ngữ~~: `formatter._requested_decimals` nhận cụm yêu cầu số chữ số thập phân bằng tiếng Anh/Việt/Pháp/Tây Ban Nha/Đức/Hàn/Trung/Nhật (kiểm thử trên p2 q25–q29). FAQ Câu 04.1 cũng cho biết BTC chuẩn hoá chữ thường, dấu và dấu thập phân.
+- ~~Nhóm cha/con sai ở bảng tài chính (`p2_t09`, `p2_t10`)~~: dòng `Total ...` đầu tiên khép nhóm có tiêu đề kết thúc bằng `:` (`Assets:`, `Commercial paper:`), nên `Total assets...` và các dòng sau không còn bị gán nhầm vào nhóm. Parse của 24/26 file còn lại không đổi (đối chiếu snapshot toàn bộ `Row_Path`), p2 3 lần chạy không có lỗi hệ thống.
+- ~~Chưa kiểm thử gói nộp~~: đã giải nén `dist/AI26C0062.zip` vào thư mục trống, `docker build --platform linux/amd64`, chạy với 6 tham số (`--memory 4g --cpus 6`) trên p2 → file hợp lệ, 30/30, 38 s, ~129k token, $0,005.
+- ~~Chưa đo `reasoning.effort` low/medium~~: không theo đuổi; token tính cả reasoning và cấu hình `none` đã cho 96–99% với 1,7 s/lệnh gọi, nên không có lý do đánh đổi.

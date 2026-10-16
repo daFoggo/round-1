@@ -67,18 +67,44 @@ def format_answer(raw: Any, query: str) -> str:
     return s
 
 
-_NUM_WORDS = {"zero": 0, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5}
+_NUM_WORDS = {
+    # en
+    "zero": 0, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+    # vi
+    "không": 0, "một": 1, "hai": 2, "ba": 3, "bốn": 4, "năm": 5,
+    # fr / es / de
+    "zéro": 0, "une": 1, "un": 1, "uno": 1, "deux": 2, "dos": 2, "trois": 3, "tres": 3, "quatre": 4, "cuatro": 4,
+    "cinq": 5, "cinco": 5, "eine": 1, "einer": 1, "zwei": 2, "drei": 3, "vier": 4, "fünf": 5,
+    # ko / zh / ja
+    "첫째": 1, "둘째": 2, "셋째": 3, "넷째": 4, "다섯째": 5, "一": 1, "二": 2, "两": 2, "兩": 2, "三": 3, "四": 4, "五": 5,
+}
+
+# Mỗi mẫu bắt một từ/chữ số đứng trước (hoặc sau) cụm 'chữ số thập phân' của từng ngôn ngữ
+_DECIMAL_PATTERNS = [
+    r"(\w+)\s+decimal\s+place",                       # en
+    r"(\w+)\s+chữ\s+số\s+thập\s+phân",                # vi
+    r"(\w+)\s+décimales?",                            # fr
+    r"(\w+)\s+(?:posiciones\s+|lugares\s+)?decimal(?:es)?\b",  # es
+    r"(\w+)\s+nachkommastellen?",                     # de
+    r"소수점\s*(\w+?)\s*자리",                          # ko
+    r"小数点(?:后|後)?\s*(\w)\s*位",                    # zh
+    r"保留\s*(\w)\s*位小数",                           # zh
+    r"小数点第\s*(\w)\s*位",                           # ja
+]
 
 
 def _requested_decimals(q_lower: str):
-    """Số chữ số thập phân mà câu hỏi yêu cầu ('exactly two decimal places', 'rounded to 3 decimal places'...)."""
-    m = re.search(r"(\w+)\s+decimal\s+place", q_lower)
-    if not m:
-        return None
-    tok = m.group(1)
-    if tok.isdigit():
-        return int(tok)
-    return _NUM_WORDS.get(tok)
+    """Số chữ số thập phân mà câu hỏi yêu cầu ('exactly two decimal places', 'một chữ số thập phân', '소수점 둘째 자리'...)."""
+    for pattern in _DECIMAL_PATTERNS:
+        m = re.search(pattern, q_lower)
+        if not m:
+            continue
+        tok = m.group(1)
+        if tok.isdigit():
+            return int(tok)
+        if tok in _NUM_WORDS:
+            return _NUM_WORDS[tok]
+    return None
 
 
 def _as_number(text: str):

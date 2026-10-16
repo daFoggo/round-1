@@ -410,6 +410,9 @@ def parse_table_block(
                     cleaned_row.append(val)
 
         data_rows.append([row_path, current_sec, sub_section] + cleaned_row)
+        # Quy ước bảng tài chính: dòng 'Total ...' đầu tiên khép nhóm ('Assets:'); dòng sau nó không còn thuộc nhóm
+        if major_section.endswith(':') and not is_indent_col and not use_indent and raw_label.lower().startswith('total'):
+            major_section = ""
 
     final_cols = ["Row_Path", "Section", "Sub_Section"] + unique_col_names
     df = pd.DataFrame(data_rows, columns=final_cols)
