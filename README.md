@@ -87,10 +87,23 @@ Mỗi module trong codebase được thiết kế dựa trên các bài báo kho
 * **Áp dụng trong Code ([`app/services/pipeline.py`](file:///c:/Users/Foggo/Documents/Dev%20projects/ai-tai-nang-2026/round-1/app/services/pipeline.py)):**
   - Hàm `is_invalid_result()` theo dõi không chỉ các exception (Traceback) mà còn bắt các trường hợp tính ra `NaN`, `None` hoặc chuỗi rỗng để kích hoạt feedback loop gửi lại cho LLM sửa mã truy vấn.
 
+### 2.7b. Tài liệu tham khảo bổ sung (đã đọc để tìm hướng giảm nhiễu / sai cấu trúc)
+| Paper | Ý chính liên quan | Kết luận cho dự án |
+| :--- | :--- | :--- |
+| *ReAcTable: Enhancing ReAct for Table QA* (VLDB 2024) – [arXiv:2310.00815](https://arxiv.org/abs/2310.00815) | Sinh nhiều ứng viên ở mỗi bước và chọn bằng **kết quả thực thi** (execution-based voting) thay vì biểu quyết cả chuỗi | Tương đương biểu quyết đã thử (không tăng EM, gấp đôi token) → chưa áp dụng |
+| *Accurate Table QA with Accessible LLMs* (Orchestra) – [arXiv:2601.03137](https://arxiv.org/abs/2601.03137) | Với model nhỏ, chia việc thành nhiều agent, mỗi agent một tác vụ đơn giản thay vì một prompt dài | Gợi ý nếu cần nâng tiếp: tách bước chọn dòng/cột khỏi bước sinh code (hiện đã làm một phần bằng linker tất định) |
+| *PoTable: Plan-then-Execute Stage Reasoning on Tables* – [arXiv:2412.04272](https://arxiv.org/abs/2412.04272) | Lỗi thực thi được đưa lại cho LLM để sinh lại | Giống vòng self-correction hiện có |
+| *Interpretable LLM-based Table QA* (POS) – [arXiv:2412.12386](https://arxiv.org/abs/2412.12386) | Chương trình tất định, chỉ ~4 lệnh gọi LLM/câu (so với Binder 50, DATER 100) | Phù hợp ràng buộc token/chi phí của cuộc thi |
+| *Chain-of-Table* (ICLR 2024) – [arXiv:2401.04398](https://arxiv.org/abs/2401.04398) | Bảng được biến đổi dần như chuỗi suy luận | Pandas code đã đóng vai trò tương tự |
+| *ST-Raptor: LLM-Powered Semi-Structured Table QA* – [arXiv:2508.18190](https://arxiv.org/abs/2508.18190) | Cây bố cục phân cấp (Hierarchical Orthogonal Tree) cho bảng Excel nhiều cấp | Cùng hướng với `Row_Path` / flatten header; tham khảo cho open issue #3 |
+| *SQuARE: hybrid retrieval cho bảng tính* – [arXiv:2512.04292](https://arxiv.org/abs/2512.04292) | Đo độ phức tạp cấu trúc sheet (độ sâu header, ô gộp) để định tuyến | Tham khảo, chưa cần (tập ẩn ≤ 20 câu) |
+| *SMART: Semantic Header Flattening and Pseudo-Code-Style Reasoning* (ACL Findings 2026) – [ACL Anthology](https://aclanthology.org/2026.findings-acl.1474/) | Làm phẳng header nhiều cấp thay vì để LLM tự suy ra phân cấp | Khớp với cách làm hiện tại (header ghép bằng ` \| `) |
+| *HiTab* – [arXiv:2108.06712](https://arxiv.org/abs/2108.06712) | Bảng phân cấp | Đã dùng ở §2.1 |
+
 ### 2.8. So sánh & Phân tích các hướng tiếp cận khác
 | Phương pháp | Phân tích tính tương thích với bài toán |
 | :--- | :--- |
-| **Text2SQL thuần (DIN-SQL / CHESS)** | Giả định schema quan hệ sạch đạt chuẩn 1NF/2NF. Khi gặp bảng Excel có chú thích, footnote, dòng trống, nhãn lồng nhau, Text2SQL sinh câu lệnh SQL sai cú pháp hoặc trả về tập rỗng do thiếu schema quan hệ chuẩn hoá. |
+| **Text2SQL thuần (DIN-SQL [arXiv:2304.11015](https://arxiv.org/abs/2304.11015), NeurIPS 2023 / CHESS [arXiv:2405.16755](https://arxiv.org/abs/2405.16755))** | Giả định schema quan hệ sạch đạt chuẩn 1NF/2NF. Khi gặp bảng Excel có chú thích, footnote, dòng trống, nhãn lồng nhau, Text2SQL sinh câu lệnh SQL sai cú pháp hoặc trả về tập rỗng do thiếu schema quan hệ chuẩn hoá. |
 | **MaskSQL ([arXiv:2509.23459](https://arxiv.org/abs/2509.23459))** | Là công trình nghiên cứu về **bảo vệ quyền riêng tư dữ liệu (Privacy-preserving Text-to-SQL)**, sử dụng cơ chế xáo trộn/che giấu (masking/perturbation) tên bảng, cột và giá trị tế nhị trước khi gửi sang LLM từ xa để tránh lộ bí mật dữ liệu. Paper cho thấy cơ chế bảo mật này làm tăng ~4.5 lần chi phí token và suy giảm 13–20 điểm accuracy do giảm sút thông tin ngữ cảnh. Phương pháp này không phù hợp với bài toán tối ưu độ chính xác và tài nguyên của Vòng 1. |
 
 ---
@@ -248,7 +261,7 @@ Tất cả số liệu dưới đây dùng **`qwen/qwen3.7-flash` qua OpenRouter
 | Sửa tiền xử lý (ô số dạng chuỗi, placeholder, thụt lề, năm ở header, nhãn `2005/2006`, khối chỉ có mã cột...) | p2: 18/30 → ~27/30; kết quả parse 13 file p4 không đổi (trừ `p4_t01`, đã sửa) | **Giữ** |
 | Gắn nhãn `[subtotal]` cho cột Total + quy tắc "đọc theo nghĩa đen" (thử trên Gemini) | Làm tệ hơn (5/7 → 2–3/7): model dùng nhãn để *loại* cột Total | **Đã gỡ**; thay bằng quy ước chính thức của BTC (trung bình trên mọi cột có mặt, kể cả Total) |
 | Quy tắc "ROW LOOKUP ORDER" (ưu tiên khớp chính xác nhãn dòng) | p2 trung bình ~26,3 so với ~27–28 trước đó | **Đã gỡ** |
-| **Entity linking tất định** (`app/services/linker.py`): liệt kê nhãn dòng/cột có thật trong bảng xuất hiện trong câu hỏi (kể cả nhóm cha và chữ CJK) vào prompt, không thêm lệnh gọi LLM | p2 24–28/30 → **29, 29, 30/30**; p4 18–19 → 19–20; token/câu gần như không đổi | **Giữ** (nguồn: CHESS entity retrieval, TableZoomer entity linking) |
+| **Entity linking tất định** (`app/services/linker.py`): liệt kê nhãn dòng/cột có thật trong bảng xuất hiện trong câu hỏi (kể cả nhóm cha và chữ CJK) vào prompt, không thêm lệnh gọi LLM | p2 24–28/30 → **29, 29, 30/30**; p4 18–19 → 19–20; token/câu gần như không đổi | **Giữ** (nguồn: CHESS – Information Retriever / Schema Selector, [arXiv:2405.16755](https://arxiv.org/abs/2405.16755); TableZoomer – column selection + entity linking + Program-of-Thoughts, [arXiv:2509.01312](https://arxiv.org/abs/2509.01312)) |
 | Mở rộng entity linking: nhóm cha khớp theo "đủ các từ", dòng `BEST ROW` (giao nhóm cha + nhãn dòng, `Row_Path` đầy đủ), gợi ý toàn bộ cột số cho "average across all" | Sửa lỗi hệ thống p2 q10 (model ghép chuỗi + regex `\|` rồi chọn nhầm dòng `TOTAL`), q11, q12; p4_q007 ổn hơn | **Giữ** |
 | Nối các mảnh tiêu đề bị ngắt dòng (`Rubber,` / `plastics &` / ... → một cụm) | Tên cột khớp nguyên cụm với câu hỏi; parse p4_t02..t10 không đổi | **Giữ** |
 | Quy tắc prompt: `regex=False` cho chuỗi chứa ` \| `, hướng "giảm" cho kết quả dương, nhãn cột lấy đoạn cuối | Trung hoà theo A/B (A ≈ B ≈ 28/30 trên p2) | **Giữ** (có cơ sở, không làm tệ hơn) |
@@ -272,8 +285,8 @@ Tất cả số liệu dưới đây dùng **`qwen/qwen3.7-flash` qua OpenRouter
 ## 7. Vấn đề còn mở (Open Issues)
 
 1. **Nhiễu giữa các lần chạy (±1–2 câu).** Các câu từng sai lẻ tẻ: `p2` q1, q12, q13, q24, q27; `p4_q019`. Nguyên nhân: model đôi khi chọn nhầm ô hoặc dùng regex không an toàn; chưa có biện pháp rẻ nào chứng minh giảm được (biểu quyết và `seed` đều đã thử, không hiệu quả).
-2. **Định dạng đáp án phụ thuộc ngôn ngữ**: bộ định dạng số thập phân chỉ nhận cụm tiếng Anh; câu tiếng Hàn/Trung dựa vào việc model tự định dạng (`14.2` thay vì `14.20` ở p2 q27 thỉnh thoảng).
+2. **Định dạng đáp án phụ thuộc ngôn ngữ**: bộ định dạng số thập phân chỉ nhận cụm tiếng Anh; câu tiếng Hàn/Trung dựa vào việc model tự định dạng (`14.2` thay vì `14.20` ở p2 q27 thỉnh thoảng). *Giảm nhẹ bởi FAQ Câu 04.1:* BTC chuẩn hoá chữ thường, khoảng trắng, dấu câu và dấu thập phân, và câu hỏi luôn nêu rõ yêu cầu làm tròn/định dạng; vẫn nên in đúng số chữ số thập phân vì chưa rõ `14.2` có bằng `14.20` sau chuẩn hoá hay không.
 3. **Tiền xử lý chưa phủ hết bố cục lạ.** Một số bảng tài chính (`p2_t09`, `p2_t10`) xếp nhóm cha/con chưa chính xác (ví dụ `Total assets...` nằm dưới nhóm `Available-for-sale ...`).
 4. **Entity linking dựa vào việc nhãn của bảng xuất hiện nguyên văn (hoặc đủ các từ) trong câu hỏi**; câu hỏi diễn đạt khác nhiều so với nhãn sẽ không được liên kết.
-5. **Mới đo trên 2 bộ công khai (50 câu)**, chưa kiểm thử trên tập ẩn thật; chưa có **template nộp bài của BTC** để đối chiếu.
+5. **Mới đo trên 2 bộ công khai (50 câu)**, chưa kiểm thử trên tập ẩn thật; chưa có **template nộp bài của BTC** để đối chiếu (FAQ Câu 04.2 / 05: BTC sẽ cung cấp template; tập ẩn chỉ `.xlsx`, nhiều sheet, nhiều ngôn ngữ, `id` số tự nhiên, CSV UTF-8 sắp xếp theo `id`, câu không trả lời để rỗng — tất cả CLI đã tuân thủ).
 6. **Chưa đo `reasoning.effort` mức `low`/`medium`** (hiện chỉ so `none` và mặc định bật).
