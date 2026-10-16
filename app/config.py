@@ -28,6 +28,8 @@ class Settings(BaseSettings):
     layout_repair: bool = False
     # Dán lưới ô thô vào prompt cho sheet bị nghi parse sai (biện pháp tạm); tắt để đo đóng góp của phần tiền xử lý
     raw_grid: bool = True
+    # Bảng con theo câu hỏi (TreeThinker keyword-header tree + SheetAgent Informer), tất định, không gọi thêm LLM
+    focus_view: bool = False
     max_output_tokens: int = 2048
     execution_timeout: int = 15
 

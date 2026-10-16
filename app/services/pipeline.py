@@ -7,7 +7,7 @@ import pandas as pd
 from app.config import settings
 from .preprocessor import (parse_workbook, parse_raw_workbook, generate_table_summary, suspicious_sheets,
                            raw_grid_preview)
-from .linker import link_entities
+from .linker import link_entities, focused_view
 from .layout import infer_layout
 from .llm_client import LLMClient
 from .executor import execute_generated_code
@@ -215,6 +215,10 @@ class QAPipeline:
         dfs = self.get_parsed_workbook(file_path)
         table_summary = generate_table_summary(dfs)
         entity_links = link_entities(query, dfs)
+        if settings.focus_view:
+            view = focused_view(query, dfs)
+            if view:
+                entity_links = f"{entity_links}\n\n{view}" if entity_links else view
         raw_dfs = self.get_raw_workbook(file_path)
         for sheet in (suspicious_sheets(dfs, raw_dfs)[:2] if settings.raw_grid else []):
             table_summary += (f"\n\nWARNING: the parsed tables of sheet '{sheet}' look unreliable. RAW CELL GRID of "

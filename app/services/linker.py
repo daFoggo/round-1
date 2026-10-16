@@ -143,3 +143,76 @@ def link_entities(query: str, dfs: Dict[str, pd.DataFrame], max_labels: int = 10
         return ''
     return ("ENTITY LINKS (deterministic: labels that really exist in the tables and appear in the question; "
             "prefer these exact strings over loose substring filters):\n" + '\n'.join(blocks))
+
+
+def _row_hits(df: pd.DataFrame, query_norm: str, query_tokens: set) -> Tuple[pd.Series, pd.Series]:
+    """Mặt nạ dòng khớp câu hỏi: (nhãn riêng của dòng khớp, có đoạn nhóm cha khớp)."""
+    paths = df['Row_Path'].fillna('').astype(str)
+    cache: Dict[str, int] = {}
+
+    def score(seg: str) -> int:
+        if seg not in cache:
+            cache[seg] = _found_in_query(_norm(seg), query_norm, query_tokens)
+        return cache[seg]
+
+    # nhãn chỉ là số (năm) thường là cận của khoảng trong câu hỏi ("between 1985 and 2013"), không phải dòng cần tìm
+    own = paths.map(lambda p: bool(p) and not p.split(' | ')[-1].strip().isdigit() and score(p.split(' | ')[-1]) > 0)
+    parent = paths.map(lambda p: any(score(s) > 0 for s in p.split(' | ')[:-1]))
+    return own, parent
+
+
+def focused_view(query: str, dfs: Dict[str, pd.DataFrame], max_rows: int = 30, max_cols: int = 12,
+                 max_chars: int = 3500, total_chars: int = 6000) -> str:
+    """Bảng con có giá trị thật cho các dòng/cột khớp câu hỏi ('' nếu không khớp gì).
+
+    Gộp hai ý: Keyword-Header Tree của TreeThinker (RealHiTBench, arXiv:2506.13405) — khớp từ khoá câu hỏi với header
+    để khoanh bảng con — và Informer của SheetAgent (arXiv:2403.03636) — đưa bảng con làm bằng chứng cho bước sinh mã.
+    Làm tất định trên nhãn có thật thay vì gọi thêm LLM/SQL; prompt vốn chỉ có 2 dòng mẫu nên model thường không thấy
+    giá trị của đúng dòng/cột cần dùng.
+    """
+    query_norm = _norm(query)
+    query_tokens = set(query_norm.split())
+    blocks: List[str] = []
+    used = 0
+    for name, df in dfs.items():
+        if df.empty or 'Row_Path' not in df.columns:
+            continue
+        own, parent = _row_hits(df, query_norm, query_tokens)
+        both = own & parent
+        rows = both if both.any() else (own | parent)
+
+        data_cols = [c for c in df.columns[3:] if df[c].notna().any()]
+        col_hits = [c for c in data_cols
+                    if any(_found_in_query(_norm(p.strip()), query_norm, query_tokens) for p in str(c).split(' | '))]
+        if not rows.any() and not col_hits:
+            continue
+        if not rows.any():
+            # chỉ khớp cột (vd. "năm nào cao nhất"): cần cả cột đó trên mọi dòng, chỉ làm khi bảng ngắn
+            if len(df) > max_rows * 2:
+                continue
+            rows = pd.Series(True, index=df.index)
+
+        # cột khớp nhưng không phải số (vd. 'Year', tên quốc gia) không chứa giá trị cần tính: khi đó hiện mọi cột
+        num_hits = [c for c in col_hits if pd.api.types.is_numeric_dtype(df[c]) and str(c).strip().lower() != 'year']
+        cols = num_hits or data_cols
+        sub = df.loc[rows, ['Row_Path'] + cols[:max_cols]]
+        notes = []
+        if len(sub) > max_rows:
+            notes.append(f"first {max_rows} of {len(sub)} matching rows")
+            sub = sub.head(max_rows)
+        if len(cols) > max_cols:
+            notes.append(f"first {max_cols} of {len(cols)} columns")
+        # tên cột dài (header nhiều tầng) làm bảng không đọc được: chỉ hiện đoạn cuối, tên đầy đủ có trong TABLE SUMMARY
+        sub = sub.rename(columns=lambda c: c if len(str(c)) <= 40 else '…' + str(c).split(' | ')[-1][-40:])
+        with pd.option_context('display.max_colwidth', 60, 'display.width', 10_000):
+            text = sub.to_string(index=False)[:max_chars]
+        if used + len(text) > total_chars:
+            break
+        used += len(text)
+        note = f" ({'; '.join(notes)})" if notes else ''
+        blocks.append(f"Table '{name}' — rows/columns matching the question{note}:\n{text}")
+
+    if not blocks:
+        return ''
+    return ("FOCUSED VIEW (actual cell values of the rows/columns the question mentions; use it to check which rows "
+            "and columns your code must select, but compute the answer from `dfs` in code):\n" + '\n\n'.join(blocks))

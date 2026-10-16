@@ -136,6 +136,7 @@ Mỗi thay đổi parser đều được kiểm tra bằng so snapshot `Row_Path
 | Câu hỏi đặt trước bảng; kế hoạch bằng chú thích trước mã (Table Meets LLM, TableMaster) | trong nhiễu (p5 26,0 / 27,0 so với 26,3) | Tắt (`PROMPT_VARIANT`) |
 | LLM suy layout rồi dựng lại bảng (kiểu ST-Raptor/TreeThinker) | p4 17,7 so với 19,3, làm hỏng bảng vốn đúng | Tắt (`LAYOUT_REPAIR`) |
 | Luật "câu hai vế trả `label, value`" | giảm 5 điểm phần trăm trên tập test (câu "Which country" trả về số) | **Đã gỡ** |
+| Bảng con theo câu hỏi (`focused_view`): Keyword-Header Tree của TreeThinker ([arXiv:2506.13405](https://arxiv.org/abs/2506.13405)) + Informer của SheetAgent ([arXiv:2403.03636](https://arxiv.org/abs/2403.03636)), làm tất định, in giá trị thật của dòng/cột khớp câu hỏi (327/381 câu có view, ~1,5K ký tự) | bật so với tắt, chạy song song, 3 lần: p6 65,0 / 66,7; p7 108,3 / 112,7; p2 28,3 / 29,7; p4 19,0 / 19,0. Trước đó `scripts/size_vs_error.py` cho thấy tỷ lệ sai p6+p7 gần như không đổi theo số dòng/cột/độ dài summary (~0,45–0,5), tức thiếu ngữ cảnh không phải nút thắt; khi có view model hay bám vào bảng con (trả giá trị thay vì nhãn, bỏ dòng ngoài view) | Tắt (`FOCUS_VIEW`) |
 | Biểu quyết thích ứng 2–3 mẫu (self-consistency); `seed`; gắn nhãn `[subtotal]`; luật "ROW LOOKUP ORDER"; ghi chú đơn vị trong summary | không tăng EM hoặc làm tệ hơn | **Đã gỡ** |
 
 ---
