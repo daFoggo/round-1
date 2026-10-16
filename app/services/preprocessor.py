@@ -195,6 +195,16 @@ def _join_wrapped(parts: List[str]) -> List[str]:
     return out
 
 
+_META_RE = re.compile(r"^\s*(back to|return to|source|sources|note|notes|contents|this worksheet|this sheet|this table|"
+                      r"key|data owner|link to|data source|published|release date|table of contents)\b", re.IGNORECASE)
+_REF_RE = re.compile(r"https?:|www\.|![$]?[A-Z]+[$]?\d|@")
+
+
+def _is_meta_text(text: str) -> bool:
+    """Ô thuộc phần mở đầu/siêu dữ liệu của sheet (câu dài, đường dẫn, ô tham chiếu, nhãn kiểu 'Source:'), không phải tên cột."""
+    return len(text) > 60 or bool(_REF_RE.search(text)) or bool(_META_RE.match(text))
+
+
 def parse_table_block(
     ws: openpyxl.worksheet.worksheet.Worksheet,
     grid: Dict[Tuple[int, int], Any],
@@ -251,6 +261,18 @@ def parse_table_block(
             continue
         header_start = r
         break
+
+    # Cắt các dòng siêu dữ liệu/ghi chú ('Back to contents', 'Sources: ...', đường dẫn) nằm ở đầu khối header
+    last_meta = None
+    for r in range(header_start, header_end):
+        vals = [str(ws.cell(r, c).value).strip() for c in range(1, max_col + 1)
+                if ws.cell(r, c).value is not None and str(ws.cell(r, c).value).strip() != '']
+        if vals and all(_is_meta_text(v) for v in vals):
+            last_meta = r
+    if last_meta is not None:
+        nxt = next((r for r in range(last_meta + 1, header_end + 1)
+                    if any(ws.cell(r, c).value not in (None, '') for c in range(1, max_col + 1))), header_end)
+        header_start = nxt
 
     if forced:
         data_start = forced["data_start"]
@@ -465,6 +487,14 @@ def parse_table_block(
     df = pd.DataFrame(data_rows, columns=final_cols)
     return df
 
+
+def _drop_empty_unnamed(df: pd.DataFrame) -> pd.DataFrame:
+    """Cột không tên và hoàn toàn trống (cột đệm / vùng định dạng thừa của sheet) chỉ làm nhiễu: bỏ đi.
+    Chạy sau khi các bảng cùng sheet đã kế thừa header của nhau (kế thừa dựa vào vị trí cột)."""
+    empty_unnamed = [c for c in df.columns[3:]
+                     if re.fullmatch(r"(Col|Column)_\d+(_\d+)?", str(c)) and df[c].isna().all()]
+    return df.drop(columns=empty_unnamed) if empty_unnamed else df
+
 def _mostly_code_columns(df: pd.DataFrame) -> bool:
     cols = [c for c in df.columns[3:] if not str(c).startswith(('Col_', 'Column_'))]
     return len(cols) >= 2 and sum(1 for c in cols if _CODE_RE.match(str(c))) / len(cols) >= 0.7
@@ -539,7 +569,7 @@ def parse_workbook(file_path: str, layouts: Optional[Dict[str, Dict[str, Any]]] 
                     tbl_key = f"{tbl_key} ({idx+1})"
                 sheets_df[tbl_key] = df
 
-    return sheets_df
+    return {k: _drop_empty_unnamed(v) for k, v in sheets_df.items()}
 
 
 def parse_raw_workbook(file_path: str) -> Dict[str, pd.DataFrame]:

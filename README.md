@@ -341,6 +341,20 @@ Thay đổi giữ lại (đều tổng quát, không gắn với file/câu hỏi
 - Layout repair tạo layout hợp lý ở nhiều file p5 (đúng header, cột nhãn) nhưng không tăng điểm: các câu p5 sai còn lại chủ yếu do đáp án gốc nhiễu/mơ hồ hoặc lỗi suy luận, không phải do cấu trúc; và khi LLM suy sai, nó làm hỏng bảng vốn đã parse đúng.
 - Hạn chế phương pháp luận: 50 câu p5 chỉ phát hiện được chênh lệch ≥ 3 điểm. Muốn quyết định các thay đổi nhỏ cần bộ ngoài lớn hơn (hàng trăm câu) và so sánh theo cặp từng câu.
 
+### 6.7. Đo chất lượng parse hàng loạt (không cần đáp án, không gọi LLM)
+
+Vì mỗi bộ dữ liệu mới lại lộ kiểu bố cục mới, ta đo trực tiếp chất lượng parse trên **toàn bộ 707 bảng** của RealHiTBench (`scripts/parse_metrics.py`, ~1 phút). Chỉ số: phủ ô số (số trong sheet có xuất hiện trong bảng parse), ô dư (số trong bảng parse không có trong sheet), tên cột chứa dữ liệu (≥ 6 dấu ` | `), tỷ lệ cột không tên (> 40%), tỷ lệ dòng không có `Row_Path` (> 50%). Một file "ok" khi đạt hết. Các bảng chia cố định theo hash tên file thành **dev (513, được xem lỗi chi tiết)** và **test (194, chỉ xem số tổng hợp)** để ước lượng không thiên lệch.
+
+| Phiên bản parser | dev ok | test ok |
+| :--- | :-: | :-: |
+| Trước (chỉ số đã sửa lỗi đếm ô trống) | 62,2% | 60,3% |
+| + bỏ cột không tên hoàn toàn trống (cột đệm do vùng định dạng thừa của sheet) | 69,8% | 64,4% |
+| + cắt dòng siêu dữ liệu/ghi chú đầu khối header (`Back to contents`, `Source:`, đường dẫn, ô tham chiếu) | **73,9%** | **70,1%** |
+
+- Một lần thử cắt header theo "phủ ≥ 20% cột dữ liệu" cho dev 74,7% nhưng làm mất tên cột ở `p2_t02`, `p2_t08` (header hợp lệ có dòng trống và dòng nhãn nhóm thưa); đã gỡ, nhờ so snapshot `Row_Path`/tên cột của p2/p4 trước và sau mỗi thay đổi.
+- Chỉ số này đo *độ trung thực của parse*, chưa chứng minh tăng EM: bench 3 lần sau các sửa đổi cho p5 24,7/50 (trước 26,3, trong nhiễu ±1,5), p2 29,3/30, p4 20/20. Cần thêm bộ câu hỏi ngoài lớn hơn để kết luận về EM.
+- Cụm lỗi còn lại trên dev: nhãn dòng rỗng (53; một phần là bảng ma trận số không có nhãn nên là báo động giả), cột không tên có dữ liệu (50), ô dư (17), tên cột chứa dữ liệu (16), thiếu phủ ô (10).
+
 ## 7. Vấn đề còn mở (Open Issues)
 
 **Còn mở**

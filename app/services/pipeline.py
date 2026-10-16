@@ -212,7 +212,7 @@ class QAPipeline:
         table_summary = generate_table_summary(dfs)
         entity_links = link_entities(query, dfs)
         raw_dfs = self.get_raw_workbook(file_path)
-        for sheet in suspicious_sheets(dfs, raw_dfs)[:2]:
+        for sheet in (suspicious_sheets(dfs, raw_dfs)[:2] if settings.raw_grid else []):
             table_summary += (f"\n\nWARNING: the parsed tables of sheet '{sheet}' look unreliable. RAW CELL GRID of "
                               f"`raw_dfs['{sheet}']` (r<N> = Excel row N, cells separated by ' | ', empty cells blank; "
                               f"column positions are kept):\n{raw_grid_preview(raw_dfs[sheet])}")
@@ -272,7 +272,7 @@ Write Python code to compute the answer and assign it to `FINAL_ANSWER`.{plan_li
                 reason += f"\n\nYour code printed (use it to correct the code):\n{stdout[-1500:]}"
             retry_grid = "".join(
                 f"\n\nRAW CELL GRID of `raw_dfs['{s}']` (r<N> = Excel row N):\n{raw_grid_preview(raw_dfs[s], max_rows=30)}"
-                for s in list(raw_dfs)[:2] if "RAW CELL GRID" not in table_summary
+                for s in (list(raw_dfs)[:2] if settings.raw_grid else []) if "RAW CELL GRID" not in table_summary
             )
             correction_prompt = f"""TABLE SUMMARY:
 {table_summary[:7000]}

@@ -26,6 +26,8 @@ class Settings(BaseSettings):
     prompt_variant: str = ""
     # Suy layout bằng LLM (1 lệnh gọi/sheet bị nghi parse sai) rồi dựng lại bảng; thay cho việc dán lưới ô thô vào prompt
     layout_repair: bool = False
+    # Dán lưới ô thô vào prompt cho sheet bị nghi parse sai (biện pháp tạm); tắt để đo đóng góp của phần tiền xử lý
+    raw_grid: bool = True
     max_output_tokens: int = 2048
     execution_timeout: int = 15
 
