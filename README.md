@@ -196,12 +196,20 @@ docker run --rm --env-file .env -v "$PWD/data/p2/xlsx_files:/input/xlsx_files:ro
 
 ### 5.4. Kiểm tra kết quả & đánh giá
 
+Image không chứa thư mục `data/` (loại bởi `.dockerignore`), nên khi đánh giá mount cả repo vào `/app`:
+
 ```bash
-docker run --rm -v "$PWD/output:/output" --entrypoint python ai2026-tableqa scripts/validate_submission.py --queries data/p2/queries.json --submission /output/submission.csv --truth data/p2/sample_submission.csv
+docker run --rm -v "$PWD:/app" -w /app -e PYTHONPATH=/app --entrypoint python ai2026-tableqa scripts/validate_submission.py --queries data/p2/queries.json --submission output/p2.csv --truth data/p2/sample_submission.csv
+```
+
+Đánh giá cả bộ (chạy N lần để thấy độ dao động của Qwen) và xem chi tiết một câu:
+
+```bash
+docker run --rm --env-file .env -v "$PWD:/app" -w /app -e PYTHONPATH=/app --entrypoint python ai2026-tableqa scripts/debug_query.py --data data/p2 --id 13
 ```
 
 ```bash
-docker run --rm --env-file .env --entrypoint python ai2026-tableqa unseen_evaluation.py
+docker run --rm --env-file .env -v "$PWD:/app" -w /app -e PYTHONPATH=/app --entrypoint python ai2026-tableqa unseen_evaluation.py
 ```
 
 ### 5.5. Đóng gói bài nộp
@@ -216,27 +224,46 @@ Tạo `dist/team001.zip` với `Dockerfile` ở gốc, kiểm tra không chứa 
 
 ## 6. Ghi nhận Thực nghiệm (Experimental Observations)
 
-### 6.0. Lượt chạy kiểm tra trong Docker (2026-10-15)
-* Chạy image `ai2026-tableqa` với `/input` read-only, `--memory 4g`, provider **Gemini** (`gemini-3.1-flash-lite`): **19 / 20** Exact Match, **191.5s** tổng (~9.6s/câu), `submission.csv` hợp lệ.
-* Câu sai `p4_q007`: model lấy trung bình 6 cột trình độ lá (3.35), đáp án chuẩn lấy trung bình cả 8 cột gồm cột Total (3.14).
-* **Thí nghiệm sửa `p4_q007` (không overfit):** bộ [`scripts/ambiguity_eval.py`](scripts/ambiguity_eval.py) gồm 7 câu paraphrase (đáp án tính từ ô Excel; 5 câu "across all", 2 câu loại trừ Total rõ ràng). Mốc gốc: **5/7**. Thử (a) gắn nhãn cột `[subtotal]` vào summary, (b) thêm quy tắc "đọc theo nghĩa đen" vào prompt, (c) ghi chú diễn giải trong summary → chỉ đạt **2–3/7** vì Gemini flash-lite dùng nhãn để *loại* cột Total. **Đã hoàn tác cả ba**; không có thay đổi nào ở prompt/preprocessor. Câu `p4_q007` giữ nguyên là lỗi do đáp án chuẩn mang tính quy ước.
-* ⚠️ **Chưa kiểm tra với `qwen/qwen3.7-flash` qua OpenRouter** (model chấm thi chính thức). Các số liệu 6.1–6.2 bên dưới cũng được đo bằng Gemini.
+Tất cả số liệu dưới đây dùng **`qwen/qwen3.7-flash` qua OpenRouter** (model chấm thi), reasoning tắt, 5 tiến trình song song, trong Docker (`--memory 4g --cpus 6`). Đáp án lấy từ `sample_submission.csv` của từng bộ công khai.
 
-### 6.1. Đánh giá trên Tập Kiểm thử Độc lập Unseen (25 câu hỏi mới)
-Để kiểm tra năng lực tổng quát hóa thực sự mà **không dựa dẫm vào 20 câu hỏi mẫu ban đầu**, một bộ benchmark độc lập gồm 25 câu hỏi mới tinh ([`unseen_evaluation.py`](file:///c:/Users/Foggo/Documents/Dev%20projects/ai-tai-nang-2026/round-1/unseen_evaluation.py)) đã được xây dựng, với Ground Truth được trích xuất trực tiếp bằng tọa độ ô `openpyxl`:
+### 6.1. Kết quả theo bộ dữ liệu công khai
 
-* **Độ chính xác tổng thể (Exact Match):** **25 / 25 (100.0%)**
-* **Thời gian phản hồi trung bình:** **~21.99s / câu**
-* **Số lượt thử lại (Self-Correction):** 3 câu kích hoạt thành công vòng lặp tự sửa lỗi ở lượt retry đầu tiên (`p4_u012`, `p4_u015`, `p4_u019`).
-* **Chi tiết theo từng nhóm bài toán biên:**
-  1. *Đa bảng trên 1 sheet (`p4_t02.xlsx` - Khối Calendar years):* **5 / 5 (100%)**
-  2. *Phân cấp hàng sâu Men vs. Women (`p4_t10.xlsx`):* **5 / 5 (100%)**
-  3. *Cây phân cấp Indent Level 3 & 4 (`p4_t03.xlsx`):* **5 / 5 (100%)**
-  4. *Bảng dài 114 dòng không bị cắt nhãn (`p4_t07.xlsx` dòng 40–114):* **5 / 5 (100%)**
-  5. *Đa sheet (`test_multisheet.xlsx`) & Chịu lỗi chính tả (Typos):* **5 / 5 (100%)**
+| Bộ | Số lần chạy | Exact Match | Thời gian cả bộ | Token / lần chạy | Chi phí / lần chạy |
+| :--- | :-: | :-: | :-: | :-: | :-: |
+| `data/p2` (30 câu, `id` số, nhiều ngôn ngữ) | 5+ | **24–29 / 30** (thường 26–28) | 40–80 s | ~120–133k (~4,2k/câu) | ~$0,004 |
+| `data/p4` (20 câu) | 5+ | **18–20 / 20** (thường 19) | 20–35 s | ~65–77k (~3,5k/câu) | ~$0,0025 |
 
-### 6.2. Đánh giá trên Tập Phát triển Mẫu (20 câu hỏi `queries.json`)
-* **Độ chính xác (Exact Match):** **20 / 20 (100.0%)** khi chạy với prompt đã được trừu tượng hóa hoàn toàn.
-* **Thời gian phản hồi trung bình:** **~22.5s / câu hỏi** (Tổng 450s / 20 câu).
-* **Bộ nhớ RAM tiêu thụ:** **< 150 MB** (hoàn toàn nằm trong giới hạn tài nguyên).
-* **Số dòng Row_Path trùng lặp:** **0 dòng trùng** trên toàn bộ 10 file bảng tính.
+- RAM đỉnh quan sát khi chạy 5 tiến trình: ~280 MB (giới hạn đề: RAM 4 GB, disk 1 GB).
+- Thời gian ước tính cho 20 câu của tập ẩn: dưới 1 phút (giới hạn 40 phút).
+- Kết quả **dao động ±1–3 câu giữa các lần chạy giống hệt nhau** (Qwen không hoàn toàn xác định dù `temperature=0`). Mọi thay đổi prompt cần được đo qua nhiều lần chạy, không nên kết luận từ một lần.
+
+### 6.2. Các thí nghiệm đã thực hiện
+
+| Thí nghiệm | Kết quả | Quyết định |
+| :--- | :--- | :--- |
+| Tắt reasoning của Qwen (`reasoning.enabled=false`) | 1,7 s thay vì 20 s mỗi lệnh gọi, ~80 token thay vì ~1500; với reasoning bật, câu hỏi phức tạp hết `max_tokens` và trả về rỗng | **Giữ tắt** |
+| Chạy song song theo tiến trình (`--workers`) | 478 s → ~45 s cho 30 câu | **Giữ** |
+| Sửa tiền xử lý (ô số dạng chuỗi, placeholder, thụt lề, năm ở header, nhãn `2005/2006`, khối chỉ có mã cột...) | p2: 18/30 → ~27/30; kết quả parse 13 file p4 không đổi (trừ `p4_t01`, đã sửa) | **Giữ** |
+| Gắn nhãn `[subtotal]` cho cột Total + quy tắc "đọc theo nghĩa đen" (thử trên Gemini) | Làm tệ hơn (5/7 → 2–3/7): model dùng nhãn để *loại* cột Total | **Đã gỡ**; thay bằng quy ước chính thức của BTC (trung bình trên mọi cột có mặt, kể cả Total) |
+| Quy tắc "ROW LOOKUP ORDER" (ưu tiên khớp chính xác nhãn dòng) | p2 trung bình ~26,3 so với ~27–28 trước đó | **Đã gỡ** |
+| Biểu quyết thích ứng 2–3 mẫu (self-consistency) | p2 29/30 và 26/30, tốn gấp đôi token và thời gian, chưa chứng minh tăng EM | **Đã gỡ hoàn toàn khỏi code** |
+
+### 6.3. Quy ước của bộ dữ liệu đã xác nhận / suy ra
+
+- "average across all …" không chỉ định cấp → trung bình trên **mọi cột** có mặt trong dòng, kể cả Total (BTC xác nhận trong Giải đáp thắc mắc, Câu 01).
+- "oldest / youngest / age" khi bảng có ngày sinh và ngày nhập học → tuổi **tại ngày nhập học** (suy ra từ `p4_q001`, `p4_q002`).
+- Đáp án phải đúng định dạng yêu cầu (số chữ số thập phân, số nguyên, thứ tự, dấu phân cách); BTC chuẩn hoá chữ thường/khoảng trắng/dấu khi so khớp.
+
+## 7. Vấn đề còn mở (Open Issues)
+
+1. **Độ dao động giữa các lần chạy (±1–3 câu trên p2).** Câu sai thay đổi từ lần này sang lần khác: `p2` q2, q10, q12, q13, q19, q20, q30; `p4` q008, q009, q013.
+2. **Câu sai dai dẳng, có nguyên nhân hệ thống:**
+   - `p2` q3: model dùng `contains('Services')` và lấy kết quả đầu tiên (`Medical care services`) thay vì dòng `Services` cấp cao nhất.
+   - `p2` q13: lọc `contains('TOTAL')` trùng với mọi dòng có "Total, 16 years and over", nên chọn nhầm dòng.
+   - `p2` q30 (tiếng Trung) và q12: tra cứu nhãn theo chuỗi con khiến nhóm bị lẫn với nhóm khác (`非原住民` chứa `原住民`).
+   - `p4_q013`: danh sách trả về `Agriculture and related` thay vì tên đúng của cột/nhãn `Agriculture`.
+3. **Tra cứu dòng theo chuỗi con còn lỏng.** Hướng "ưu tiên khớp chính xác" khi thử qua prompt lại làm tệ hơn; cần giải pháp ở tầng khác (ví dụ chuẩn hoá nhãn hoặc cho model danh sách nhãn riêng của dòng) và phải đo bằng nhiều lần chạy.
+4. **Tiền xử lý chưa phủ hết bố cục lạ.** Một số bảng tài chính (`p2_t09`, `p2_t10`) xếp nhóm cha/con chưa chính xác (ví dụ `Total assets...` nằm dưới nhóm `Available-for-sale ...`); khối tên cột chỉ có mã (`p2_t08`) mới xử lý bằng kế thừa header của khối đầu.
+5. **Chưa kiểm thử trên tập ẩn thật** và chưa có **template nộp bài của BTC** để đối chiếu.
+6. **Chưa đo `reasoning.effort` mức `low`/`medium`** (hiện chỉ so `none` và mặc định bật).
+7. **Tên đội** khi đóng gói (`scripts/package_submission.py`) còn dùng giá trị mẫu `team001`.
