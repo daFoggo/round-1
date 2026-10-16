@@ -200,9 +200,12 @@ def parse_table_block(
     grid: Dict[Tuple[int, int], Any],
     start_row: int,
     end_row: int,
-    max_col: int
+    max_col: int,
+    forced: Optional[Dict[str, Any]] = None,
 ) -> pd.DataFrame:
-    """Parse một khối bảng cụ thể (từ start_row đến end_row) thành DataFrame phẳng."""
+    """Parse một khối bảng cụ thể (từ start_row đến end_row) thành DataFrame phẳng.
+
+    `forced` (tuỳ chọn) ghi đè phần tự dò: {'header_rows': [a, b], 'data_start': n, 'label_cols': [c, ...]}."""
     # 1. Tìm data_start_row trong khối
     data_start = None
     for r in range(start_row, end_row + 1):
@@ -248,6 +251,10 @@ def parse_table_block(
             continue
         header_start = r
         break
+
+    if forced:
+        data_start = forced["data_start"]
+        header_start, header_end = forced["header_rows"]
 
     # 4. Xây dựng Header Path cho từng cột
     col_names = []
@@ -322,6 +329,10 @@ def parse_table_block(
                 if nxt_vals and sum(1 for v in nxt_vals if is_num_or_date(v) or is_placeholder(v)) / len(nxt_vals) >= 0.6:
                     label_cols = cand
                     label_col_idx = cand[-1]
+
+    if forced and forced.get("label_cols") and not is_indent_col:
+        label_cols = list(forced["label_cols"])
+        label_col_idx = label_cols[-1]
 
     # Thụt lề của nhãn (khoảng trắng đầu dòng / alignment.indent) cho bảng không có cột Indent Level
     widths = {}
@@ -471,8 +482,11 @@ def _inherit_header(df: pd.DataFrame, base_df: Optional[pd.DataFrame]) -> pd.Dat
     return out
 
 
-def parse_workbook(file_path: str) -> Dict[str, pd.DataFrame]:
-    """Parse toàn bộ workbook Excel, tự động tách các bảng độc lập trên cùng sheet."""
+def parse_workbook(file_path: str, layouts: Optional[Dict[str, Dict[str, Any]]] = None) -> Dict[str, pd.DataFrame]:
+    """Parse toàn bộ workbook Excel, tự động tách các bảng độc lập trên cùng sheet.
+
+    `layouts` (tuỳ chọn): {tên sheet: {'header_rows', 'data_start', 'data_end', 'label_cols'}} — sheet nào có layout thì
+    được dựng thành MỘT bảng theo layout đó thay vì tự dò."""
     wb = openpyxl.load_workbook(file_path, data_only=True)
     sheets_df = {}
 
@@ -494,6 +508,14 @@ def parse_workbook(file_path: str) -> Dict[str, pd.DataFrame]:
             for r in range(rng.min_row, rng.max_row + 1):
                 for c in range(rng.min_col, rng.max_col + 1):
                     grid[(r, c)] = top_left_val
+
+        if layouts and sheet_name in layouts:
+            lay = layouts[sheet_name]
+            end_r = lay.get("data_end") or max_row
+            df = parse_table_block(ws, grid, lay["header_rows"][0], end_r, max_col, forced=lay)
+            if not df.empty:
+                sheets_df[sheet_name] = df
+                continue
 
         table_ranges = detect_table_ranges(ws, grid, max_row, max_col)
 

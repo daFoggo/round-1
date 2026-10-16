@@ -100,6 +100,27 @@ Mỗi module trong codebase được thiết kế dựa trên các bài báo kho
 | *SMART: Semantic Header Flattening and Pseudo-Code-Style Reasoning* (ACL Findings 2026) – [ACL Anthology](https://aclanthology.org/2026.findings-acl.1474/) | Làm phẳng header nhiều cấp thay vì để LLM tự suy ra phân cấp | Khớp với cách làm hiện tại (header ghép bằng ` \| `) |
 | *HiTab* – [arXiv:2108.06712](https://arxiv.org/abs/2108.06712) | Bảng phân cấp | Đã dùng ở §2.1 |
 
+### 2.7c. Bằng chứng SOTA cho bảng phân cấp / bán cấu trúc và hệ quả thiết kế
+| Nguồn | Phát hiện có số liệu | Hệ quả cho dự án |
+| :--- | :--- | :--- |
+| *ST-Raptor: LLM-Powered Semi-Structured Table QA* – [arXiv:2508.18190](https://arxiv.org/abs/2508.18190) | Ablation trên SSTQA: bỏ bước chuyển bảng thành cây (HO-Tree) giảm **15,15 điểm** (72,39% → 57,24%), nhiều hơn bỏ thao tác dữ liệu (−7,30), bỏ kiểm chứng đáp án (−6,29), bỏ phân rã câu hỏi (−4,33). Cây nhận diện header bằng VLM + embedding, hỗ trợ trực tiếp Excel | **Biểu diễn cấu trúc là đòn bẩy lớn nhất**, lớn hơn mọi mẹo prompt; ưu tiên tiền xử lý |
+| *RealHiTBench* (ACL 2025 Findings) – [arXiv:2506.13405](https://arxiv.org/abs/2506.13405) | TreeThinker: bỏ bước sinh cây header giảm **~8 điểm** (GPT-4o 63,29 → 55,27), bỏ bước suy luận theo cây chỉ giảm ~2,5. Đầu vào văn bản (LaTeX) hơn ảnh 10–15 điểm; bảng > 20k token chỉ còn ~31% | Header phải được dựng thành cây cấp bậc (tuple loại/cấp/vị trí đầu–cuối/nội dung) **trước** khi hỏi; giữ bảng gọn; không dùng ảnh |
+| *SpreadsheetLLM* – [arXiv:2407.09025](https://arxiv.org/abs/2407.09025) | SheetCompressor (neo cấu trúc + chỉ mục ngược + gom theo định dạng số) nén ~25 lần, tăng 25,6% phát hiện bảng so với mã hoá thô | Dùng neo cấu trúc (hàng/cột ranh giới vùng) để chọn vùng cần đưa cho LLM thay vì dán cả sheet |
+| *TableMaster* (ICLR 2026) – [arXiv:2501.19378](https://arxiv.org/abs/2501.19378) | Table-of-focus, verbalization, chuẩn hoá bảng, lập luận thích ứng giữa văn bản và code; 78,13% WikiTQ (GPT-4o-mini) | Chuẩn hoá bảng trước khi hỏi là một thành phần chính |
+| *HiTab* (ACL 2022) – [arXiv:2108.06712](https://arxiv.org/abs/2108.06712) | 78% bảng có header cột nhiều cấp, 86% có header dòng nhiều cấp; cây phân cấp trích bằng heuristic trên ô gộp/định dạng, đúng 94% trên 100 bảng mẫu | Heuristic tất định trên ô gộp, thụt lề và định dạng đã đủ cho phần lớn bảng; chỉ bảng còn lại cần LLM |
+
+**Kết luận:** các bài trên xác nhận hướng đã áp dụng ở §2.1–2.7 (cây header ≈ `Row_Path` + header ghép ` | `, neo cấu trúc, program-aided, tự sửa lỗi), không phải hướng mới. Phần chưa áp dụng nằm ở *cách trình bày prompt* (xem §2.7d). Cách dán lưới ô thô vào prompt chỉ là biện pháp tạm.
+
+### 2.7d. Tối ưu prompt: bằng chứng và những gì chưa áp dụng
+| Kỹ thuật | Bằng chứng | Hiện trạng |
+| :--- | :--- | :--- |
+| Câu hỏi đặt **trước** bảng | *Table Meets LLM* ([arXiv:2305.13062](https://arxiv.org/abs/2305.13062), WSDM 2024): đặt sau bảng giảm ~6,8 điểm | Chưa: câu hỏi đang ở cuối prompt |
+| Ví dụ mẫu one-shot | Cùng paper: bỏ ví dụ giảm mạnh nhất (~30% ở zero-shot) | Chỉ có 3 mẫu mã ngắn, chưa có ví dụ trọn vẹn (bảng → code → đáp án) |
+| Lập luận bằng văn bản trước khi viết code | *TableMaster* ([arXiv:2501.19378](https://arxiv.org/abs/2501.19378)): bỏ textual reasoning −4,28, bỏ textual guidance −2,92 (WikiTQ) | Chưa: model viết code ngay |
+| Table-of-focus + table peek | TableMaster: bỏ table-of-focus −1,73, bỏ structure extraction −3,38; giảm kích thước ngữ cảnh | Một phần: summary liệt kê toàn bộ cột/`Row_Path`, chưa lọc theo câu hỏi |
+| Tự bổ sung giá trị/khoảng quan trọng (self-augmentation) | Table Meets LLM: +0,8 đến +5,7 điểm | Tương đương `ENTITY LINKS` (đã giữ, +5 điểm trên p2) |
+| Định dạng bảng đưa vào prompt | Table Meets LLM: HTML tốt nhất ở 4/5 tập; Markdown yếu ở truy xuất cột (35,3%); RealHiTBench: văn bản hơn ảnh 10–15 điểm | Dùng danh sách cột + mẫu dòng, không đưa nội dung bảng nguyên văn (giữ token thấp) |
+
 ### 2.8. So sánh & Phân tích các hướng tiếp cận khác
 | Phương pháp | Phân tích tính tương thích với bài toán |
 | :--- | :--- |
@@ -305,6 +326,20 @@ Thay đổi giữ lại (đều tổng quát, không gắn với file/câu hỏi
 - *Đáp án gốc nhiễu hoặc mơ hồ, không sửa* (~11 câu): câu hỏi lệch bảng (hỏi tôm Ecuador trên bảng cá hồi), phạm vi không rõ (cộng cả các mặt hàng hay chỉ mặt hàng đầu), đáp án cộng trùng (tổng + từng nhóm), định dạng khác (`31 Mar 16`), đáp án ghép (`32.70, Yes`), xếp hạng sai (`1 mg/L, 5 mg/L, 0 mg/L` trong khi số liệu cho `5, 0, 1`).
 - *Lỗi thật, đã sửa hoặc giảm* (6 nhóm): làm tròn hòa nửa (`97.725`→`97.73`, `4.125`→`4.13`, nay half-up thay cho làm tròn nhị phân của float), câu xếp hạng trả một giá trị thay vì danh sách (thêm luật 9), cột `Estimates` không khớp `Estimate` (bỏ "s" số nhiều), bảng có hai cột nhãn chữ (`Set | TNF 24h`, `Region | Purpose`), nhóm cha chỉ thể hiện qua nhiều dòng tiêu đề liên tiếp (`Reference area: X` / `Sector: Y`), dòng năm dạng chuỗi bị coi là dữ liệu và cắt đôi bảng.
 - *Lỗi thật còn lại*: ma trận +/- cần đếm theo cột (q21), bố cục sheet nhiều bảng lồng (q43, q31), model trả nhãn thay vì giá trị (q6), nhóm bảng khó đếm có điều kiện (q34, q49).
+
+### 6.6. So sánh các hướng tối ưu (3 lần chạy mỗi bộ, cùng thước đo, 16–24 tiến trình)
+
+| Cấu hình | p5 /50 | p2 /30 | p4 /20 | Kết luận |
+| :--- | :-: | :-: | :-: | :--- |
+| **Mốc hiện tại** (không bật cờ nào) | 26,3 | 29,7 | 19,3 | **Giữ** |
+| `PROMPT_VARIANT=qfirst` (câu hỏi trước bảng, theo *Table Meets LLM*) | 26,0 | 29,0 | 18,3 | Không thắng, tắt |
+| `PROMPT_VARIANT=plan` (kế hoạch bằng chú thích trước code, theo *TableMaster*) | 27,0 | 28,3 | 20,0 | Trong nhiễu, tắt |
+| `PROMPT_VARIANT=qfirst+plan` | 25,0 | 29,3 | 18,3 | Không thắng, tắt |
+| `LAYOUT_REPAIR=true` (LLM suy layout 1 lần cho sheet nghi parse sai, parser dựng lại; `app/services/layout.py`) | 25,3 | 29,0 | 17,7 | **Tệ hơn trên p2/p4** (làm hỏng `p2` q14, `p4_q013`), tắt |
+
+- Nhiễu giữa các lần chạy là ±1–1,5 câu, nên chênh lệch dưới ~1,5 điểm không kết luận được. Các gain trong paper gốc đo trên GPT-3.5/GPT-4o-mini; với Qwen3.7-Flash sinh code không reasoning thì chưa tái hiện được.
+- Layout repair tạo layout hợp lý ở nhiều file p5 (đúng header, cột nhãn) nhưng không tăng điểm: các câu p5 sai còn lại chủ yếu do đáp án gốc nhiễu/mơ hồ hoặc lỗi suy luận, không phải do cấu trúc; và khi LLM suy sai, nó làm hỏng bảng vốn đã parse đúng.
+- Hạn chế phương pháp luận: 50 câu p5 chỉ phát hiện được chênh lệch ≥ 3 điểm. Muốn quyết định các thay đổi nhỏ cần bộ ngoài lớn hơn (hàng trăm câu) và so sánh theo cặp từng câu.
 
 ## 7. Vấn đề còn mở (Open Issues)
 

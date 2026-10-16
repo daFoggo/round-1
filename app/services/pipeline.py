@@ -8,6 +8,7 @@ from app.config import settings
 from .preprocessor import (parse_workbook, parse_raw_workbook, generate_table_summary, suspicious_sheets,
                            raw_grid_preview)
 from .linker import link_entities
+from .layout import infer_layout
 from .llm_client import LLMClient
 from .executor import execute_generated_code
 from .formatter import format_answer
@@ -146,8 +147,41 @@ class QAPipeline:
 
     def get_parsed_workbook(self, file_path: str) -> Dict[str, pd.DataFrame]:
         if file_path not in self.parsed_cache:
-            self.parsed_cache[file_path] = parse_workbook(file_path)
+            dfs = parse_workbook(file_path)
+            if settings.layout_repair:
+                dfs = self._repair_layouts(file_path, dfs)
+            self.parsed_cache[file_path] = dfs
         return self.parsed_cache[file_path]
+
+    def _repair_layouts(self, file_path: str, dfs: Dict[str, pd.DataFrame]) -> Dict[str, pd.DataFrame]:
+        """Sheet bị nghi parse sai: LLM suy layout một lần, parser dựng lại; chỉ nhận kết quả nếu hết bị nghi ngờ."""
+        raw_dfs = self.get_raw_workbook(file_path)
+        layouts = {}
+        for sheet in suspicious_sheets(dfs, raw_dfs)[:3]:
+            lay = infer_layout(self.llm, file_path, sheet, raw_dfs[sheet])
+            if lay:
+                layouts[sheet] = lay
+        if not layouts:
+            return dfs
+        try:
+            rebuilt = parse_workbook(file_path, layouts)
+        except Exception:
+            return dfs
+        def covers_data(sheet: str) -> bool:
+            """Bảng dựng lại phủ ít nhất nửa số dòng có dữ liệu thật trong khoảng LLM chỉ ra."""
+            lay, raw = layouts[sheet], raw_dfs[sheet]
+            expected = int(raw.loc[lay["data_start"]:lay["data_end"]].notna().any(axis=1).sum())
+            return sheet in rebuilt and len(rebuilt[sheet]) >= max(1, expected // 2)
+
+        accepted = {s for s in layouts if covers_data(s)}
+        out: Dict[str, pd.DataFrame] = {}
+        for key, df in dfs.items():
+            sheet = next((s for s in layouts if key == s or key.startswith(f"{s} - ")), None)
+            if sheet is None or sheet not in accepted:
+                out[key] = df
+            elif sheet in rebuilt and sheet not in out:
+                out[sheet] = rebuilt[sheet]  # thay toàn bộ bảng của sheet bằng bảng dựng theo layout
+        return out
 
     def get_raw_workbook(self, file_path: str) -> Dict[str, pd.DataFrame]:
         if file_path not in self.raw_cache:
@@ -183,7 +217,24 @@ class QAPipeline:
                               f"`raw_dfs['{sheet}']` (r<N> = Excel row N, cells separated by ' | ', empty cells blank; "
                               f"column positions are kept):\n{raw_grid_preview(raw_dfs[sheet])}")
 
-        user_prompt = f"""File: {os.path.basename(file_path)}
+        variants = set(settings.prompt_variant.lower().split("+"))
+        plan_line = ("\nBegin the code with 3-5 short comment lines: (1) which table, rows and columns you will use, "
+                     "(2) the operation, (3) the expected answer type and format. Then write the code."
+                     if "plan" in variants else "")
+        if "qfirst" in variants:
+            user_prompt = f"""File: {os.path.basename(file_path)}
+
+QUESTION:
+"{query}"
+
+TABLE SUMMARY:
+{table_summary}
+{entity_links}
+
+Answer the QUESTION above. Write Python code to compute the answer and assign it to `FINAL_ANSWER`.{plan_line}
+"""
+        else:
+            user_prompt = f"""File: {os.path.basename(file_path)}
 
 TABLE SUMMARY:
 {table_summary}
@@ -192,7 +243,7 @@ TABLE SUMMARY:
 QUESTION:
 "{query}"
 
-Write Python code to compute the answer and assign it to `FINAL_ANSWER`.
+Write Python code to compute the answer and assign it to `FINAL_ANSWER`.{plan_line}
 """
 
         raw_response = self.llm.generate_response(user_prompt, system_prompt=SYSTEM_PROMPT)

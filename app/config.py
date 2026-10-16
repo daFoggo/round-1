@@ -22,6 +22,10 @@ class Settings(BaseSettings):
     max_retries: int = 3
     enable_direct_fallback: bool = True
     fallback_table_chars: int = 6000
+    # Biến thể prompt để A/B: 'qfirst' (câu hỏi trước bảng), 'plan' (kế hoạch bằng chú thích trước khi viết code); nối bằng '+'
+    prompt_variant: str = ""
+    # Suy layout bằng LLM (1 lệnh gọi/sheet bị nghi parse sai) rồi dựng lại bảng; thay cho việc dán lưới ô thô vào prompt
+    layout_repair: bool = False
     max_output_tokens: int = 2048
     execution_timeout: int = 15
 
