@@ -356,6 +356,20 @@ Vì mỗi bộ dữ liệu mới lại lộ kiểu bố cục mới, ta đo tr�
 - Chỉ số này đo *độ trung thực của parse*, chưa chứng minh tăng EM: bench 3 lần sau các sửa đổi cho p5 24,7 → **27,7**/50 (trước 26,3; nhiễu ±1,5), p2 29,0/30, p4 19,3/20 (đều trong nhiễu). Cần thêm bộ câu hỏi ngoài lớn hơn để kết luận về EM.
 - Cụm lỗi còn lại trên dev: cột không tên có dữ liệu (51; phần lớn là bảng chữ không có hàng tiêu đề thật, chưa có luật tổng quát), nhãn dòng rỗng (45; một phần là bảng ma trận số không có nhãn nên là báo động giả, một phần là sheet nhiều bảng bị tách quá nhỏ), ô dư (17), tên cột chứa dữ liệu (16), thiếu phủ ô (10).
 
+### 6.8. Bộ đánh giá ngoài lớn và bài học (p6 test 131 câu, p7 dev 200 câu)
+
+`p6` và `p7` dựng bằng `scripts/build_external_set.py --split test|dev` từ các bảng RealHiTBench theo cùng phép chia hash dev/test của §6.7 (loại bảng trùng p2/p4/p5). Pipeline **chưa từng được chỉnh theo bảng của p6** nên điểm p6 là ước lượng gần không thiên lệch nhất. Chấm bằng `bench.py --lenient` (chuẩn hoá từng phần của đáp án ghép: `B-2, 73,228.80` = `B-2, 73228.8`); `scripts/rescore.py` chấm lại file bench cũ bằng cùng bộ chuẩn hoá.
+
+| Cấu hình (3 lần chạy) | p7 dev /200 | p6 test /131 |
+| :--- | :-: | :-: |
+| **Mốc** (cấu hình đã commit trước đó) | 106,7 (53,3%) | **67,0 (51,1%)** |
+| + luật 10 (không nhân/chia theo ghi chú đơn vị), luật 11 (câu hai vế `label, value`), dấu dương cho "decrease in ..." | 110,7 (55,3%) | 60,3 (**46,1%**) |
+| Gỡ luật 11 (**giữ**) | 110,0 (55,0%) | 66,3 (50,6%) |
+
+- Luật 11 làm câu "Which country ...?" trả về giá trị số thay vì tên (`1.27` thay cho `Belgium`): **−5 điểm phần trăm trên tập test** dù dev nhỉnh hơn. Đây là ví dụ vì sao phải có tập test tách riêng.
+- Nhiễu giữa các lần chạy của p7 lên tới ±7 câu (101, 104, 115); chỉ kết luận khi chênh lệch lớn hơn nhiễu hoặc cùng chiều trên cả dev và test.
+- Chất lượng parse gần như không giải thích khoảng cách EM: bảng parse "ok" EM 53,0% (n=257), "không ok" 48,6% (n=74); bảng > 100 dòng 36,1% (n=12). Đọc thủ công mẫu 10 câu sai nhất quán 3/3 trên bảng parse tốt: ~4/10 đáp án gốc sai hoặc mơ hồ, ~3/10 chỉ khác định dạng (câu hai vế, dấu phân cách), ~3/10 lỗi thật của model (nhân theo đơn vị, dấu của mức giảm, danh sách rỗng). Trần EM thực tế trên bộ này ước khoảng 65–70%.
+
 ## 7. Vấn đề còn mở (Open Issues)
 
 **Còn mở**

@@ -37,6 +37,12 @@ def format_answer(raw: Any, query: str) -> str:
     if (s.startswith('"') and s.endswith('"')) or (s.startswith("'") and s.endswith("'")):
         s = s[1:-1].strip()
 
+    # Câu hỏi nêu rõ 'decrease/decline/drop/reduction (in|of|from) ...' hỏi độ lớn của mức giảm: đáp án là số dương
+    if re.search(r"\b(decrease|decline|drop|reduction|fall)\b\s+(in|of|from|by)\b", q_lower):
+        num = _as_number(s)
+        if num is not None and num < 0:
+            s = s.replace("-", "", 1).strip()
+
     if "yes or no" in q_lower:
         if "yes" in s.lower():
             return "Yes"

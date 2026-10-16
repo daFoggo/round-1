@@ -47,6 +47,11 @@ def is_known(fp: frozenset, known: list) -> bool:
     return any(len(fp & k) >= 0.9 * max(len(fp), len(k)) for k in known)
 
 
+def split_of(name: str) -> str:
+    import hashlib
+    return "dev" if int(hashlib.md5(name.encode()).hexdigest(), 16) % 10 < 7 else "test"
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--qa", default="data/external/realhitbench/QA_final.json")
@@ -54,12 +59,17 @@ def main() -> None:
     ap.add_argument("--out", default="data/p5")
     ap.add_argument("--n", type=int, default=50)
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--split", choices=["all", "dev", "test"], default="all",
+                    help="chỉ lấy bảng thuộc tập dev/test (cùng phép chia hash tên file với scripts/parse_metrics.py)")
+    ap.add_argument("--exclude", default="", help="các thư mục bộ dữ liệu khác (phân tách bằng dấu phẩy) có bảng cần loại")
     ap.add_argument("--suffix", default=" Answer with only the final value, without explanation.",
                     help="câu yêu cầu định dạng nối vào câu hỏi (đề thi luôn có yêu cầu kiểu này)")
     a = ap.parse_args()
 
     items = json.load(open(a.qa, encoding="utf-8"))["queries"]
     pool = [x for x in items
+            if a.split == "all" or split_of(f"{x['FileName']}.xlsx") == a.split]
+    pool = [x for x in pool
             if x["QuestionType"] in ("Fact Checking", "Numerical Reasoning")
             and x["SubQType"] in KEEP_SUBTYPES
             and short_answer(x["ProcessedAnswer"]) and not re.search(r"chart|plot|graph", x["Question"], re.I)]
@@ -75,7 +85,7 @@ def main() -> None:
         rnd.shuffle(xs)
     os.makedirs(os.path.join(a.out, "xlsx_files"), exist_ok=True)
     os.makedirs(a.cache, exist_ok=True)
-    known = known_fingerprints(["data/p2", "data/p4"])
+    known = known_fingerprints(["data/p2", "data/p4"] + [d for d in a.exclude.split(",") if d])
     picked, skipped = [], 0
     while len(picked) < a.n and any(per_source.values()):  # vòng tròn giữa các nguồn
         for src in sorted(per_source):
@@ -83,7 +93,11 @@ def main() -> None:
                 x = per_source[src].pop()
                 cached = os.path.join(a.cache, f"{x['FileName']}.xlsx")
                 if not os.path.exists(cached):
-                    urllib.request.urlretrieve(f"{BASE}/tables/{x['FileName']}.xlsx", cached)
+                    try:
+                        urllib.request.urlretrieve(f"{BASE}/tables/{x['FileName']}.xlsx", cached)
+                    except Exception:  # bảng không có trên máy chủ (vd. biến thể _swap): bỏ câu này
+                        skipped += 1
+                        continue
                 if is_known(cell_fingerprint(cached), known):
                     skipped += 1
                     continue

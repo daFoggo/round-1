@@ -70,6 +70,8 @@ ROBUST DATA ANALYSIS GUIDELINES:
 
 9. RANKING / ORDERING: when asked to rank, order or sort items, FINAL_ANSWER is the full ordered list of the item LABELS (e.g. `['B', 'A', 'C']`) in the requested direction, one entry per item that was asked about, without their values unless asked.
 
+10. UNITS: report numbers exactly as they appear in the table. Do NOT multiply or divide by a unit note such as '(in thousands)', '(in millions)' or '%' unless the question explicitly asks to convert units.
+
 GENERAL PROGRAMMING PATTERNS:
 - Pattern A (Aggregating across multiple metric columns for a specific row):
   ```python

@@ -24,16 +24,26 @@ def load_truth(path):
         return {r[0]: r[1] for r in list(csv.reader(f))[1:] if len(r) >= 2}
 
 
-def _norm_answer(s: str) -> str:
-    """Chuẩn hoá giống BTC (chữ thường, bỏ khoảng trắng/dấu thừa, số 14.0 = 14) để bộ ngoài không bị phạt vì định dạng."""
+def _norm_part(s: str) -> str:
     s = str(s).strip().lower().replace("%", "").replace("$", "")
-    s = re.sub(r"(?<=\d),(?=\d{3})", "", s)  # dấu phân cách hàng nghìn
-    s = re.sub(r"\s*,\s*", ",", re.sub(r"\s+", " ", s)).strip(" .\"'")
+    s = re.sub(r"\s+", " ", s).strip(" .\"'")
     try:
-        f = float(s)
+        f = float(s.replace(",", ""))
         return f"{round(f, 6):.6f}".rstrip("0").rstrip(".")
     except ValueError:
         return s
+
+
+def _norm_answer(s: str) -> str:
+    """Chuẩn hoá giống BTC (chữ thường, khoảng trắng/dấu thừa, dấu phân cách hàng nghìn, 14.0 = 14), áp dụng riêng cho
+    từng phần của đáp án ghép, để bộ ngoài không bị phạt vì định dạng."""
+    s = str(s).strip()
+    whole = _norm_part(s)
+    if re.fullmatch(r"-?[\d,]*\.?\d+", whole.replace(",", "")) or "," not in s:
+        return whole
+    # tách ở dấu phẩy KHÔNG phải dấu phân cách hàng nghìn
+    parts = re.split(r",(?!\d{3}\b)\s*", s)
+    return ",".join(_norm_part(p) for p in parts)
 
 
 def same(pred: str, truth: str, lenient: bool) -> bool:
