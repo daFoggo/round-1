@@ -44,17 +44,11 @@ def format_answer(raw: Any, query: str) -> str:
         parts = s.replace(',', ' ').split()
         return parts[-1] if parts else s
 
-    if "two decimal places" in q_lower:
-        nums = re.findall(r'-?\d+\.?\d*', s)
-        if len(nums) >= 2 and ("men, women" in q_lower or "separating the values" in q_lower):
-            try:
-                return f"{float(nums[0]):.2f}, {float(nums[1]):.2f}"
-            except:
-                pass
-        try:
-            return f"{float(s.replace(',', '')):.2f}"
-        except:
-            pass
+    decimals = _requested_decimals(q_lower)
+    if decimals is not None:
+        out = _format_decimals(s, decimals)
+        if out is not None:
+            return out
 
     if "two integers" in q_lower:
         nums = re.findall(r'-?\d+', s.replace(',', ''))
@@ -71,3 +65,35 @@ def format_answer(raw: Any, query: str) -> str:
                 return nums[0]
 
     return s
+
+
+_NUM_WORDS = {"zero": 0, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5}
+
+
+def _requested_decimals(q_lower: str):
+    """Số chữ số thập phân mà câu hỏi yêu cầu ('exactly two decimal places', 'rounded to 3 decimal places'...)."""
+    m = re.search(r"(\w+)\s+decimal\s+place", q_lower)
+    if not m:
+        return None
+    tok = m.group(1)
+    if tok.isdigit():
+        return int(tok)
+    return _NUM_WORDS.get(tok)
+
+
+def _as_number(text: str):
+    try:
+        return float(text.strip().replace(",", ""))
+    except ValueError:
+        return None
+
+
+def _format_decimals(s: str, d: int):
+    """Chỉ định dạng phần số: toàn bộ danh sách số, hoặc số cuối của dạng 'nhóm, số' (không đụng tới số trong tên nhóm)."""
+    parts = [p.strip() for p in s.split(", ")] if ", " in s else [s.strip()]
+    nums = [_as_number(p) for p in parts]
+    if all(n is not None for n in nums):
+        return ", ".join(f"{n:.{d}f}" for n in nums)
+    if nums[-1] is not None and len(parts) >= 2:
+        return ", ".join(parts[:-1] + [f"{nums[-1]:.{d}f}"])
+    return None

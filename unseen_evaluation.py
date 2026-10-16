@@ -178,7 +178,7 @@ def run_unseen_evaluation():
     for idx, item in enumerate(UNSEEN_QUERIES, 1):
         q_id = item["id"]
         fname = item["file_name"]
-        fpath = f"xlsx_files/{fname}"
+        fpath = f"data/p4/xlsx_files/{fname}"
         query = item["query"]
         expected = str(item["expected"]).strip()
 

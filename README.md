@@ -23,7 +23,7 @@ flowchart TD
     end
 
     subgraph S3["3. Program-Aided Generation & Execution"]
-        PR --> LLM["LLM (Qwen3.7-Flash / Gemini)"]
+        PR --> LLM["LLM (Qwen3.7-Flash qua OpenRouter)"]
         LLM --> CODE["Sinh mã Python / Pandas code<br/>(Lưu kết quả vào biến 'FINAL_ANSWER')"]
         CODE --> EXEC["Restricted Python Executor<br/>(Môi trường giới hạn builtins, timeout 15s)"]
     end
@@ -128,7 +128,7 @@ round-1/
 │   ├── services/            # Core Business Logic & Algorithms
 │   │   ├── __init__.py
 │   │   ├── preprocessor.py  # Thuật toán Dual-Hierarchy, Multi-table & Indent Level
-│   │   ├── llm_client.py    # LLM Client (Gemini & OpenRouter Qwen3.7-Flash)
+│   │   ├── llm_client.py    # LLM Client OpenRouter (Qwen3.7-Flash): retry 429/5xx, thống kê token/cost
 │   │   ├── executor.py      # Restricted Execution với timeout & traceback capture (PAL)
 │   │   ├── formatter.py     # Rule-based Exact Match Post-processor
 │   │   └── pipeline.py      # Pipeline Orchestrator với Self-Correction Loop (Self-Debug)
@@ -136,13 +136,16 @@ round-1/
 │       ├── __init__.py
 │       ├── health.py        # GET /health
 │       └── qa.py            # POST /qa/ask, POST /qa/batch
+├── data/
+│   ├── p4/                  # Bộ công khai đợt 1 (20 câu): xlsx_files/, queries.json, sample_submission.csv
+│   └── p2/                  # Bộ công khai đợt 2 (30 câu, id số): xlsx_files/, queries.json, sample_submission.csv
 ├── main.py                  # ENTRYPOINT của Docker image (gọi app.cli)
 ├── evaluate.py              # Script đánh giá Exact Match trên 20 câu mẫu (Dev Set)
 ├── unseen_evaluation.py     # Script đánh giá độc lập trên 25 câu hỏi Unseen (Test Set)
 ├── unseen_evaluation_report.json # Báo cáo chi tiết kết quả kiểm thử Unseen
 ├── .env.example             # File mẫu cấu hình biến môi trường an toàn
 ├── Dockerfile               # Image linux/amd64, ENTRYPOINT ["python", "main.py"]
-├── docker-compose.yml       # Mô phỏng hệ thống chấm (/input read-only, 1 GB RAM)
+├── docker-compose.yml       # Mô phỏng hệ thống chấm (/input read-only, RAM 4 GB)
 ├── scripts/
 │   ├── validate_submission.py  # Kiểm tra định dạng submission.csv (+ Exact Match)
 │   └── package_submission.py   # Đóng gói dist/<team>.zip đúng quy cách
@@ -167,7 +170,7 @@ docker build --platform linux/amd64 -t ai2026-tableqa .
 Image khai báo `ENTRYPOINT ["python", "main.py"]` và nhận đúng 6 tham số của BTC:
 
 ```bash
-docker run --rm --memory 1g -v "$PWD/xlsx_files:/input/xlsx_files:ro" -v "$PWD/queries.json:/input/queries.json:ro" -v "$PWD/output:/output" ai2026-tableqa --xlsx-dir /input/xlsx_files --queries /input/queries.json --output /output/submission.csv --openrouter-key <key> --openrouter-model qwen/qwen3.7-flash --openrouter-base-url https://openrouter.ai/api/v1
+docker run --rm --memory 4g -v "$PWD/data/p2/xlsx_files:/input/xlsx_files:ro" -v "$PWD/data/p2/queries.json:/input/queries.json:ro" -v "$PWD/output:/output" ai2026-tableqa --xlsx-dir /input/xlsx_files --queries /input/queries.json --output /output/submission.csv --openrouter-key <key> --openrouter-model qwen/qwen3.7-flash --openrouter-base-url https://openrouter.ai/api/v1
 ```
 
 Hoặc dùng compose (lấy `OPENROUTER_API_KEY` từ `.env`, kết quả ở `output/submission.csv`):
@@ -176,22 +179,25 @@ Hoặc dùng compose (lấy `OPENROUTER_API_KEY` từ `.env`, kết quả ở `o
 docker compose run --rm grader
 ```
 
+- Chạy song song `--workers N` (mặc định 5 tiến trình); có deadline 35 phút để vẫn ghi được CSV; `submission.csv` sắp xếp theo `id` tăng dần.
+- Qwen có reasoning mặc định (chậm, tốn token): pipeline tắt reasoning qua `reasoning.enabled=false` (đổi bằng biến `OPENROUTER_REASONING_EFFORT=none|low|medium|high`).
+- Gặp 429/5xx/402 tạm thời: thử lại theo `Retry-After` hoặc backoff mũ; không sleep giữa các request bình thường.
 - Log ghi ra **stderr**; `submission.csv` chỉ chứa `id,answer`.
 - Câu hỏi lỗi → answer rỗng, chương trình vẫn ghi đủ mọi id và thoát mã 0.
 - Không có API key trong mã nguồn; `.env` bị loại khỏi image (`.dockerignore`) và khỏi ZIP.
 
 ### 5.3. Cấu hình `.env` (chỉ dùng khi phát triển)
 
-Sao chép `.env.example` thành `.env`. Khi chấm thi, key/model/base URL được truyền qua tham số dòng lệnh nên `.env` không cần thiết. Gemini chỉ dùng thử nghiệm cục bộ:
+Sao chép `.env.example` thành `.env` và điền `OPENROUTER_API_KEY`. Khi chấm thi, key/model/base URL được truyền qua tham số dòng lệnh nên `.env` không cần thiết. Chạy với key lấy từ `.env`:
 
 ```bash
-docker run --rm --env-file .env -v "$PWD/xlsx_files:/input/xlsx_files:ro" -v "$PWD/queries.json:/input/queries.json:ro" -v "$PWD/output:/output" ai2026-tableqa --xlsx-dir /input/xlsx_files --queries /input/queries.json --output /output/submission.csv --provider gemini
+docker run --rm --env-file .env -v "$PWD/data/p2/xlsx_files:/input/xlsx_files:ro" -v "$PWD/data/p2/queries.json:/input/queries.json:ro" -v "$PWD/output:/output" ai2026-tableqa --xlsx-dir /input/xlsx_files --queries /input/queries.json --output /output/submission.csv
 ```
 
 ### 5.4. Kiểm tra kết quả & đánh giá
 
 ```bash
-docker run --rm -v "$PWD/output:/output" --entrypoint python ai2026-tableqa scripts/validate_submission.py --queries queries.json --submission /output/submission.csv --truth sample_submission.csv
+docker run --rm -v "$PWD/output:/output" --entrypoint python ai2026-tableqa scripts/validate_submission.py --queries data/p2/queries.json --submission /output/submission.csv --truth data/p2/sample_submission.csv
 ```
 
 ```bash
@@ -211,7 +217,7 @@ Tạo `dist/team001.zip` với `Dockerfile` ở gốc, kiểm tra không chứa 
 ## 6. Ghi nhận Thực nghiệm (Experimental Observations)
 
 ### 6.0. Lượt chạy kiểm tra trong Docker (2026-10-15)
-* Chạy image `ai2026-tableqa` với `/input` read-only, `--memory 1g`, provider **Gemini** (`gemini-3.1-flash-lite`): **19 / 20** Exact Match, **191.5s** tổng (~9.6s/câu), `submission.csv` hợp lệ.
+* Chạy image `ai2026-tableqa` với `/input` read-only, `--memory 4g`, provider **Gemini** (`gemini-3.1-flash-lite`): **19 / 20** Exact Match, **191.5s** tổng (~9.6s/câu), `submission.csv` hợp lệ.
 * Câu sai `p4_q007`: model lấy trung bình 6 cột trình độ lá (3.35), đáp án chuẩn lấy trung bình cả 8 cột gồm cột Total (3.14).
 * **Thí nghiệm sửa `p4_q007` (không overfit):** bộ [`scripts/ambiguity_eval.py`](scripts/ambiguity_eval.py) gồm 7 câu paraphrase (đáp án tính từ ô Excel; 5 câu "across all", 2 câu loại trừ Total rõ ràng). Mốc gốc: **5/7**. Thử (a) gắn nhãn cột `[subtotal]` vào summary, (b) thêm quy tắc "đọc theo nghĩa đen" vào prompt, (c) ghi chú diễn giải trong summary → chỉ đạt **2–3/7** vì Gemini flash-lite dùng nhãn để *loại* cột Total. **Đã hoàn tác cả ba**; không có thay đổi nào ở prompt/preprocessor. Câu `p4_q007` giữ nguyên là lỗi do đáp án chuẩn mang tính quy ước.
 * ⚠️ **Chưa kiểm tra với `qwen/qwen3.7-flash` qua OpenRouter** (model chấm thi chính thức). Các số liệu 6.1–6.2 bên dưới cũng được đo bằng Gemini.

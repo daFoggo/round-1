@@ -13,7 +13,7 @@ router = APIRouter(prefix="/qa", tags=["Question Answering"])
 @router.post("/ask", response_model=QueryResponse)
 def ask_single_query(
     query_item: QueryItem,
-    input_dir: str = "xlsx_files",
+    input_dir: str = "data/p4/xlsx_files",
     pipeline: QAPipeline = Depends(get_qa_pipeline)
 ):
     fpath = os.path.join(input_dir, query_item.file_name)
@@ -44,8 +44,9 @@ def run_batch_evaluation(
 
     # Load ground truth if exists
     ground_truth = {}
-    if os.path.exists("sample_submission.csv"):
-        with open("sample_submission.csv", "r", encoding="utf-8") as f:
+    truth_path = os.path.join(os.path.dirname(req.queries_file), "sample_submission.csv")
+    if os.path.exists(truth_path):
+        with open(truth_path, "r", encoding="utf-8-sig") as f:
             reader = csv.reader(f)
             header = next(reader)
             for row in reader:

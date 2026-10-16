@@ -16,8 +16,8 @@ class QueryResponse(BaseModel):
     elapsed_seconds: float = 0.0
 
 class BatchQueryRequest(BaseModel):
-    input_dir: str = "xlsx_files"
-    queries_file: str = "queries.json"
+    input_dir: str = "data/p4/xlsx_files"
+    queries_file: str = "data/p4/queries.json"
     output_file: Optional[str] = "submission.csv"
 
 class EvaluationMetric(BaseModel):

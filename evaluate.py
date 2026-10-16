@@ -4,15 +4,16 @@ import csv
 import time
 from app.services.pipeline import QAPipeline
 
-def run_evaluation(limit: int = None, output_csv: str = "submission.csv"):
+def run_evaluation(data_dir: str = "data/p4", limit: int = None, output_csv: str = "submission.csv"):
     pipeline = QAPipeline()
 
-    with open("queries.json", "r", encoding="utf-8") as f:
+    with open(os.path.join(data_dir, "queries.json"), "r", encoding="utf-8-sig") as f:
         queries = json.load(f)
 
     ground_truth = {}
-    if os.path.exists("sample_submission.csv"):
-        with open("sample_submission.csv", "r", encoding="utf-8") as f:
+    truth_path = os.path.join(data_dir, "sample_submission.csv")
+    if os.path.exists(truth_path):
+        with open(truth_path, "r", encoding="utf-8-sig") as f:
             reader = csv.reader(f)
             header = next(reader)
             for row in reader:
@@ -33,7 +34,7 @@ def run_evaluation(limit: int = None, output_csv: str = "submission.csv"):
         qid = item["id"]
         fname = item["file_name"]
         qtext = item["query"]
-        fpath = os.path.join("xlsx_files", fname)
+        fpath = os.path.join(data_dir, "xlsx_files", fname)
         expected = ground_truth.get(qid, "N/A")
 
         print(f"\n[{idx}/{len(queries)}] {qid} ({fname})...", flush=True)
@@ -76,4 +77,5 @@ def run_evaluation(limit: int = None, output_csv: str = "submission.csv"):
     return results
 
 if __name__ == "__main__":
-    run_evaluation()
+    import sys
+    run_evaluation(sys.argv[1] if len(sys.argv) > 1 else "data/p4")

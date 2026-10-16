@@ -92,7 +92,7 @@ id,answer
 - [x] `--openrouter-key` (fallback: biến môi trường `OPENROUTER_API_KEY`)
 - [x] `--openrouter-model` (mặc định `qwen/qwen3.7-flash`)
 - [x] `--openrouter-base-url` (mặc định `https://openrouter.ai/api/v1`)
-- [x] Khi chấm: provider luôn là **OpenRouter** (Gemini chỉ dùng khi thử nghiệm cục bộ).
+- [x] Chỉ dùng **OpenRouter** với `qwen/qwen3.7-flash` (đã gỡ toàn bộ code Gemini).
 
 ### D. Hành vi khi chạy
 - [x] Chỉ đọc `/input` (mở `.xlsx` ở chế độ đọc, không ghi đè) – đã test với mount `:ro`.
@@ -106,17 +106,25 @@ id,answer
 - [x] CSV UTF-8, header đúng `id,answer`.
 - [x] Mỗi `id` xuất hiện đúng 1 lần, không thiếu / trùng / thừa (tự kiểm tra sau khi ghi, xem `scripts/validate_submission.py`).
 - [x] `answer` chỉ là đáp án cuối cùng.
+- [x] `id` là số tự nhiên; các dòng được **sắp xếp theo `id` tăng dần**; câu không trả lời được → chuỗi rỗng.
+
+### H. Theo Giải đáp thắc mắc của BTC
+- [x] Chỉ cần xử lý `.xlsx`, **nhiều sheet**, **nhiều ngôn ngữ** (đã có file/câu hỏi tiếng Hàn trong bộ p2).
+- [x] Quy ước "average across all …": tính trên mọi cột có mặt trong dòng, kể cả cột Total (prompt + test `scripts/ambiguity_eval.py`).
+- [x] Chỉ dùng Internet khi build và khi gọi OpenRouter; chỉ dùng LLM do BTC cung cấp (Qwen3.7 Flash).
+- [x] Cho phép xử lý song song (`--workers`).
+- [ ] Đối chiếu với **template nộp bài** của BTC khi nhận được.
 
 ### F. Giới hạn tài nguyên (theo `DE_THI.md`)
-- [ ] Chi phí ≤ 0.10 USD/câu (kể cả retry) – kiểm tra trên dashboard OpenRouter sau khi chạy validate.
-- [x] Thời gian ≤ 40 phút / 20 câu (đo được ~1–3 phút với Gemini; cần đo lại với Qwen).
-- [x] Bộ nhớ sử dụng ≤ 1 GB (đã chạy thử với `--memory 1g`, không bị OOM).
+- [ ] Chi phí ≤ 0.10 USD/câu (kể cả retry) – log cuối mỗi lượt chạy in tổng `cost` từ `usage` của OpenRouter.
+- [ ] Thời gian ≤ 40 phút / 20 câu (chạy song song nhiều tiến trình; có deadline 35 phút để vẫn ghi được CSV).
+- [x] Dung lượng đĩa ≤ 1 GB (image + dữ liệu chạy) và **RAM ≤ 4 GB** (theo Giải đáp thắc mắc, Câu 03; trước đây hiểu nhầm là RAM 1 GB). Chạy thử với `--memory 4g`, đo RAM đỉnh thực tế ở bước đánh giá cuối.
 - [x] Model chấm thi: `qwen/qwen3.7-flash` qua OpenRouter.
 
 ### G. Kiểm thử cuối cùng (mô phỏng hệ thống chấm)
 - [x] `docker build --platform linux/amd64 -t ai2026-tableqa .`
-- [x] Chạy image với 6 tham số, `/input` mount read-only, có `--memory 1g`.
+- [x] Chạy image với 6 tham số, `/input` mount read-only, có `--memory 4g`.
 - [x] `scripts/validate_submission.py` báo hợp lệ.
 - [x] Giải nén thử `dist/<ten_doi>.zip` vào thư mục trống → build & chạy lại được.
 
-> ⚠️ **Còn lại:** chạy thử với `qwen/qwen3.7-flash` qua OpenRouter (key trong `.env` đang trống) để xác nhận độ chính xác, chi phí/câu và tên đội khi đóng gói.
+> ⚠️ **Còn lại:** đánh giá lại bằng `qwen/qwen3.7-flash` (EM, giây/câu, token/câu gồm cả reasoning, cost) và điền tên đội thật khi đóng gói.

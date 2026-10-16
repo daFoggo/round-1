@@ -85,9 +85,24 @@ id,answer
   - Máy chấm thi của BTC có cấu hình: **6 core vCPU, 12 GB RAM**.
 - **Dung lượng và bộ nhớ:** 
   - Tệp `.zip` nộp bài không được vượt quá **100 MB**.
-  - Trong quá trình chạy trên tập kiểm thử ẩn, tổng không gian bộ nhớ giải pháp sử dụng **không được vượt quá 1 GB**.
+  - Trong quá trình chạy trên tập kiểm thử ẩn, tổng dung lượng giải pháp sử dụng **không được vượt quá 1 GB**.
+    - ✅ *Làm rõ theo Giải đáp thắc mắc (Câu hỏi 03): **1 GB là dung lượng đĩa (disk)**; **RAM tối đa là 4 GB**.*
 
 > ⚠️ **Lưu ý quan trọng:** Bài dự thi vi phạm một trong các giới hạn nêu trên sẽ **không được chấm điểm**.
+
+### Làm rõ từ Giải đáp thắc mắc của BTC (xem [`GIAI_DAP_THAC_MAC.md`](GIAI_DAP_THAC_MAC.md))
+
+| Nội dung | Quy định |
+| :--- | :--- |
+| Bộ nhớ | Disk **1 GB**, RAM tối đa **4 GB** |
+| `id` | Thống nhất là **số tự nhiên** ở cả `queries.json` và `submission.csv` |
+| Thứ tự dòng / câu không trả lời | `submission.csv` UTF-8, **sắp xếp theo `id` tăng dần**; không trả lời được → **chuỗi rỗng** |
+| Dữ liệu tập ẩn | Chỉ `.xlsx`, **có thể nhiều sheet**, **có thể nhiều ngôn ngữ** |
+| Chuẩn hóa khi chấm | BTC bỏ khoảng trắng thừa/dấu không cần thiết, đưa về chữ thường, chuẩn hóa dấu thập phân; câu hỏi luôn nêu rõ format đáp án |
+| Quy ước "average across all …" | Không chỉ định cấp (như "excluding totals") → trung bình **trên tất cả cột có mặt trong dòng**, kể cả cột Total |
+| Token | Tính bằng **input + reasoning** |
+| Internet | Chỉ khi cài đặt (build Docker) và khi gọi OpenRouter; thời gian build không tính vào 40 phút |
+| Xử lý song song | Được phép |
 
 ---
 

@@ -12,7 +12,7 @@ import time
 from app.services.preprocessor import parse_workbook
 from app.services.pipeline import QAPipeline
 
-F = "xlsx_files/p4_t04.xlsx"
+F = "data/p4/xlsx_files/p4_t04.xlsx"
 TWO = "Answer with only the number rounded to two decimal places."
 
 

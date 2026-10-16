@@ -22,14 +22,20 @@ def execute_generated_code(
     code: str,
     dfs: Dict[str, pd.DataFrame],
     file_path: str,
-    timeout_seconds: Optional[int] = None
-) -> Tuple[Optional[Any], Optional[str]]:
+    timeout_seconds: Optional[int] = None,
+    raw_dfs: Optional[Dict[str, pd.DataFrame]] = None,
+) -> Tuple[Optional[Any], Optional[str], str]:
+    """Chạy code do LLM sinh. Trả về (FINAL_ANSWER, traceback, stdout).
+    Dùng bản sao dữ liệu để các câu hỏi trên cùng một file không ảnh hưởng nhau."""
     timeout = timeout_seconds or settings.execution_timeout
+    dfs = {k: v.copy() for k, v in dfs.items()}
+    raw_dfs = {k: v.copy() for k, v in (raw_dfs or {}).items()}
     first_sheet_name = next(iter(dfs)) if dfs else ""
     local_env = {
         "dfs": dfs,
         "df": dfs.get(first_sheet_name) if first_sheet_name else None,
         "file_path": file_path,
+        "raw_dfs": raw_dfs,
         "pd": pd,
         "openpyxl": openpyxl,
         "re": re,
@@ -51,15 +57,9 @@ def execute_generated_code(
             signal.alarm(timeout)
         exec(code, local_env, local_env)
         final_ans = local_env.get("FINAL_ANSWER")
-        stdout_output = stdout_buf.getvalue().strip()
-
-        if final_ans is None and stdout_output:
-            final_ans = stdout_output.split("\n")[-1].strip()
-
-        return final_ans, None
-    except Exception as e:
-        tb = traceback.format_exc()
-        return None, tb
+        return final_ans, None, stdout_buf.getvalue().strip()
+    except BaseException:  # gồm cả ExecutionTimeout và SystemExit từ code sinh ra
+        return None, traceback.format_exc(), stdout_buf.getvalue().strip()
     finally:
         if use_alarm:
             signal.alarm(0)

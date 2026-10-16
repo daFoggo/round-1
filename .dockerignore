@@ -18,3 +18,5 @@ submission.csv
 *.pdf
 
 ~$*
+drive-download-*
+data

@@ -6,11 +6,11 @@ services:
       context: .
       platform: linux/amd64
     image: ai2026-tableqa
-    mem_limit: 1g
+    mem_limit: 4g
     cpus: 6
     volumes:
-      - ./xlsx_files:/input/xlsx_files:ro
-      - ./queries.json:/input/queries.json:ro
+      - ./data/p2/xlsx_files:/input/xlsx_files:ro
+      - ./data/p2/queries.json:/input/queries.json:ro
       - ./output:/output
     command:
       - --xlsx-dir

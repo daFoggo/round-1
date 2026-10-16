@@ -1,96 +1,35 @@
 import os
+import random
 import re
 import time
-import requests
 from typing import Optional
+
+import requests
+
 from app.config import settings
 
+
 class LLMClient:
+    """Client OpenRouter (Qwen3.7 Flash) với xử lý rate limit và thống kê token/chi phí."""
+
     def __init__(
         self,
-        provider: Optional[str] = None,
-        gemini_key: Optional[str] = None,
         openrouter_key: Optional[str] = None,
         model: Optional[str] = None,
         openrouter_base_url: Optional[str] = None,
     ):
-        self.provider = (provider or settings.llm_provider).lower()
-        self.gemini_key = gemini_key or settings.gemini_api_key or os.getenv("GEMINI_API_KEY", "")
         self.openrouter_key = openrouter_key or settings.openrouter_api_key or os.getenv("OPENROUTER_API_KEY", "")
         self.openrouter_model = model or settings.openrouter_model
         self.openrouter_base_url = (openrouter_base_url or settings.openrouter_base_url).rstrip("/")
-        self.gemini_model = model or settings.gemini_model
-        # Thống kê token (tiêu chí xếp hạng thứ 3)
-        self.usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "calls": 0}
+        # Thống kê (token gồm input + reasoning là tiêu chí xếp hạng thứ 3)
+        self.usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0,
+                      "reasoning_tokens": 0, "cost": 0.0, "calls": 0}
 
     @property
     def active_model(self) -> str:
-        return self.openrouter_model if self.provider == "openrouter" else self.gemini_model
+        return self.openrouter_model
 
-    def generate_response(self, prompt: str, system_prompt: Optional[str] = None) -> str:
-        if self.provider == "gemini":
-            return self._call_gemini(prompt, system_prompt)
-        elif self.provider == "openrouter":
-            return self._call_openrouter(prompt, system_prompt)
-        else:
-            raise ValueError(f"Unsupported LLM provider: {self.provider}")
-
-    def _call_gemini(self, prompt: str, system_prompt: Optional[str] = None) -> str:
-        if not self.gemini_key:
-            raise ValueError("GEMINI_API_KEY is not configured.")
-        
-        models_to_try = [self.gemini_model, "gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]
-        contents = []
-        if system_prompt:
-            contents.append({"role": "user", "parts": [{"text": system_prompt}]})
-            contents.append({"role": "model", "parts": [{"text": "Understood. I will strictly follow these instructions."}]})
-        
-        contents.append({"role": "user", "parts": [{"text": prompt}]})
-
-        payload = {
-            "contents": contents,
-            "generationConfig": {
-                "temperature": 0.0,
-                "maxOutputTokens": 2048,
-            }
-        }
-        headers = {
-            "Content-Type": "application/json",
-            "X-goog-api-key": self.gemini_key
-        }
-
-        last_error = None
-        for model in models_to_try:
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-            for attempt in range(3):
-                try:
-                    res = requests.post(url, headers=headers, json=payload, timeout=30)
-                    if res.status_code == 200:
-                        data = res.json()
-                        meta = data.get("usageMetadata") or {}
-                        self.usage["prompt_tokens"] += int(meta.get("promptTokenCount") or 0)
-                        self.usage["completion_tokens"] += int(meta.get("candidatesTokenCount") or 0)
-                        self.usage["total_tokens"] += int(meta.get("totalTokenCount") or 0)
-                        self.usage["calls"] += 1
-                        candidates = data.get("candidates", [])
-                        if not candidates:
-                            return ""
-                        parts = candidates[0].get("content", {}).get("parts", [])
-                        return "".join(p.get("text", "") for p in parts)
-                    elif res.status_code in [503, 429]:
-                        time.sleep(2 * (attempt + 1))
-                        continue
-                    else:
-                        res.raise_for_status()
-                except Exception as e:
-                    last_error = e
-                    time.sleep(1)
-
-        if last_error:
-            raise last_error
-        return ""
-
-    def _call_openrouter(self, prompt: str, system_prompt: Optional[str] = None) -> str:
+    def generate_response(self, prompt: str, system_prompt: Optional[str] = None, temperature: float = 0.0) -> str:
         if not self.openrouter_key:
             raise ValueError("OpenRouter API key is not configured (--openrouter-key / OPENROUTER_API_KEY).")
         url = f"{self.openrouter_base_url}/chat/completions"
@@ -108,32 +47,71 @@ class LLMClient:
         payload = {
             "model": self.openrouter_model,
             "messages": messages,
-            "temperature": 0.0,
+            "temperature": temperature,
             "max_tokens": settings.max_output_tokens,
         }
+        # Reasoning được tính vào token và làm chậm mạnh: 'none' = tắt hoàn toàn
+        effort = settings.openrouter_reasoning_effort.lower()
+        payload["reasoning"] = {"enabled": False} if effort == "none" else {"effort": effort}
 
         last_error: Optional[Exception] = None
-        for attempt in range(3):
+        for attempt in range(settings.llm_max_attempts):
             try:
-                res = requests.post(url, headers=headers, json=payload, timeout=60)
-                if res.status_code == 429 or res.status_code >= 500:
-                    last_error = requests.HTTPError(f"{res.status_code} from OpenRouter", response=res)
-                    time.sleep(2 * (attempt + 1))
-                    continue
-                res.raise_for_status()
-                data = res.json()
-                usage = data.get("usage") or {}
-                for k in ("prompt_tokens", "completion_tokens", "total_tokens"):
-                    self.usage[k] += int(usage.get(k) or 0)
-                self.usage["calls"] += 1
-                choices = data.get("choices", [])
-                if not choices:
-                    return ""
-                return choices[0].get("message", {}).get("content") or ""
+                res = requests.post(url, headers=headers, json=payload, timeout=settings.llm_timeout)
             except (requests.ConnectionError, requests.Timeout) as e:
                 last_error = e
-                time.sleep(2 * (attempt + 1))
+                self._sleep_backoff(attempt, None)
+                continue
+
+            # 429: giới hạn từ OpenRouter/provider; 402 in_flight_budget_exhausted và 5xx: tạm thời
+            if res.status_code in (429, 500, 502, 503, 504) or (
+                res.status_code == 402 and self._is_transient_402(res)
+            ):
+                last_error = requests.HTTPError(f"{res.status_code} from OpenRouter: {res.text[:200]}", response=res)
+                self._sleep_backoff(attempt, res.headers.get("Retry-After"))
+                continue
+
+            res.raise_for_status()  # 4xx còn lại (401, 403, 402 weight_exceeds_budget...) không thử lại
+            data = res.json()
+            self._record_usage(data.get("usage") or {})
+            choices = data.get("choices", [])
+            if not choices:
+                return ""
+            msg = choices[0].get("message", {})
+            # Lỗi giữa chừng (vd. 429 trong stream) trả về finish_reason 'error'
+            if choices[0].get("finish_reason") == "error" and not msg.get("content"):
+                last_error = RuntimeError(f"OpenRouter finish_reason=error: {data.get('error')}")
+                self._sleep_backoff(attempt, None)
+                continue
+            return msg.get("content") or ""
         raise last_error if last_error else RuntimeError("OpenRouter call failed")
+
+    @staticmethod
+    def _is_transient_402(res) -> bool:
+        try:
+            meta = (res.json().get("error") or {}).get("metadata") or {}
+            return meta.get("reason") == "in_flight_budget_exhausted" or meta.get("limit_source") == "in_flight_budget"
+        except Exception:
+            return False
+
+    @staticmethod
+    def _sleep_backoff(attempt: int, retry_after) -> None:
+        """Ưu tiên Retry-After của server; nếu không có thì backoff mũ có jitter. Không sleep khi request bình thường."""
+        try:
+            delay = float(retry_after) if retry_after is not None else None
+        except ValueError:
+            delay = None
+        if delay is None:
+            delay = min(2 ** attempt, 20) + random.uniform(0, 1)
+        time.sleep(min(delay, settings.llm_max_backoff))
+
+    def _record_usage(self, usage: dict) -> None:
+        for k in ("prompt_tokens", "completion_tokens", "total_tokens"):
+            self.usage[k] += int(usage.get(k) or 0)
+        details = usage.get("completion_tokens_details") or {}
+        self.usage["reasoning_tokens"] += int(details.get("reasoning_tokens") or 0)
+        self.usage["cost"] += float(usage.get("cost") or 0.0)
+        self.usage["calls"] += 1
 
     @staticmethod
     def extract_python_code(text: str) -> str:

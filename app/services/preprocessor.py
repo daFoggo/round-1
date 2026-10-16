@@ -11,23 +11,65 @@ def clean_text(val: Any) -> str:
         return ""
     s = str(val).strip().replace('\r', ' ').replace('\n', ' ')
     s = re.sub(r'\(\d+\)', '', s)
+    s = re.sub(r'(?<=\S)\([a-z]\)', '', s)
     s = re.sub(r'\b\d+/(?=\s|$)', '', s)
     s = re.sub(r'\s+', ' ', s)
     return s.strip()
+
+_PLACEHOLDER_RE = re.compile(r'^(?:[-–—.]+|n/?a|x|z|nm|\*+|\(-?\d{1,3}-?\)|\([a-z]\)|\(\w{1,2}\))$', re.IGNORECASE)
+_NUMBER_RE = re.compile(r'^\(?-?[$€£]?\s*-?\d[\d,]*\.?\d*\s*%?\)?$|^\(?-?[$€£]?\s*-?\.\d+\s*%?\)?$')
+
+
+def is_placeholder(v: Any) -> bool:
+    """Ô giữ chỗ không mang giá trị: '-', em dash, '..', 'n/a', '(i)', '(-8-)'."""
+    return isinstance(v, str) and bool(_PLACEHOLDER_RE.match(v.strip().lstrip('$€£').strip()))
+
+
+def parse_numeric(v: Any) -> Optional[float]:
+    """Chuyển '$1,402', '50%', '(123)' (kế toán, số âm) thành số; không phải số -> None."""
+    if isinstance(v, bool):
+        return None
+    if isinstance(v, (int, float)):
+        return v
+    if not isinstance(v, str):
+        return None
+    t = v.strip()
+    if not t or not _NUMBER_RE.match(t):
+        return None
+    neg = t.startswith('(') and t.endswith(')')
+    t = re.sub(r'[()$€£%,\s]', '', t)
+    try:
+        num = float(t) if '.' in t else int(t)
+    except ValueError:
+        return None
+    return -abs(num) if neg else num
+
 
 def is_num_or_date(v: Any) -> bool:
     if v is None:
         return False
     if isinstance(v, (int, float, datetime)):
         return True
-    s = str(v).strip().replace(',', '')
-    if not s or s == '-':
-        return False
+    return parse_numeric(v) is not None
+
+
+def clean_label(val: Any) -> str:
+    """Nhãn dòng: bỏ chú thích dính chữ cuối nhãn (vd. 'Private industry3' -> 'Private industry')."""
+    s = clean_text(val)
+    return re.sub(r'(?<=[a-z)])\d(?:,\d)*$', '', s).strip()
+
+
+def indent_width(ws, r: int, c: int, raw: Any) -> int:
+    """Độ thụt lề của nhãn: khoảng trắng đầu dòng + alignment.indent của Excel."""
+    lead = 0
+    if isinstance(raw, str):
+        lead = len(raw.replace('	', '    ')) - len(raw.replace('	', '    ').lstrip())
     try:
-        float(s)
-        return True
-    except ValueError:
-        return False
+        lead += int(ws.cell(r, c).alignment.indent or 0) * 2
+    except Exception:
+        pass
+    return lead
+
 
 def is_note_row(c1_val: str) -> bool:
     """Nhận diện các dòng chú thích cuối bảng (Footnotes, Notes)."""
@@ -36,8 +78,16 @@ def is_note_row(c1_val: str) -> bool:
         c1_low.startswith('footnote') or
         c1_low.startswith('note:') or
         bool(re.match(r'^\(\d+\)\s*', c1_val)) or
-        bool(re.match(r'^\d+/\s*', c1_val))
+        bool(re.match(r'^\d{1,2}/(?:\s|$)', c1_val))  # '1/ Ghi chú' (không phải '2005/2006')
     )
+
+_CODE_RE = re.compile(r'^[A-Z]{1,3}[A-Z0-9]{1,5}$')
+
+
+def _is_code_row(first_val: str, row_info, idx: int) -> bool:
+    """Dòng chỉ gồm mã cột ngắn viết hoa (DJ54, DJ57...), thường nằm dưới một tiêu đề khối."""
+    return bool(first_val) and bool(_CODE_RE.match(first_val)) and row_info[idx]['nums'] == 0
+
 
 def detect_table_ranges(ws: openpyxl.worksheet.worksheet.Worksheet, grid: Dict[Tuple[int, int], Any], max_row: int, max_col: int) -> List[Tuple[int, int, str]]:
     """
@@ -48,7 +98,8 @@ def detect_table_ranges(ws: openpyxl.worksheet.worksheet.Worksheet, grid: Dict[T
     for r in range(1, max_row + 1):
         vals = [grid.get((r, c)) for c in range(1, max_col + 1)]
         non_empty = [v for v in vals if v is not None and str(v).strip() != '']
-        nums = sum(1 for v in non_empty if isinstance(v, (int, float)))
+        nums = sum(1 for v in non_empty if isinstance(v, (int, float)) or (isinstance(v, str) and parse_numeric(v) is not None))
+        placeholders = sum(1 for v in non_empty if is_placeholder(v))
         years = sum(1 for v in non_empty if isinstance(v, int) and 1900 <= v <= 2100)
         c1 = str(vals[0]).strip() if vals and vals[0] is not None else ''
         is_note = is_note_row(c1)
@@ -56,6 +107,7 @@ def detect_table_ranges(ws: openpyxl.worksheet.worksheet.Worksheet, grid: Dict[T
             'r': r,
             'non_empty': len(non_empty),
             'nums': nums,
+            'placeholders': placeholders,
             'years': years,
             'is_note': is_note,
             'c1': c1,
@@ -71,11 +123,11 @@ def detect_table_ranges(ws: openpyxl.worksheet.worksheet.Worksheet, grid: Dict[T
         r = info['r']
         if info['is_note']:
             continue
-        if info['nums'] >= 2 and info['years'] < info['nums']:
+        if (info['nums'] >= 2 or (info['nums'] >= 1 and info['placeholders'] >= 1)) and info['years'] < info['nums']:
             had_data = True
         elif had_data:
             # Phát hiện nếu có bảng mới xuất hiện sau một khối dữ liệu
-            if info['years'] >= 2 or (info['non_empty'] >= 2 and info['nums'] == 0 and not info['is_note']):
+            if info['years'] >= 2 or (info['non_empty'] >= 2 and info['nums'] == 0 and info['placeholders'] == 0 and not info['is_note']):
                 next_has_years_or_data = False
                 for look in row_info[idx+1:idx+4]:
                     if look['years'] >= 2 or look['nums'] >= 2:
@@ -85,10 +137,37 @@ def detect_table_ranges(ws: openpyxl.worksheet.worksheet.Worksheet, grid: Dict[T
                     tables.append((curr_start, r - 1, table_title))
                     curr_start = r
                     table_title = info['first_val'] or f"Table_{len(tables)+1}"
+                    # Dòng mã cột (DJ54...) không phải tên bảng: lấy nhãn văn bản ngay phía trên (vd. "Indices")
+                    if _is_code_row(info['first_val'], row_info, idx):
+                        for back in row_info[max(0, idx - 3):idx][::-1]:
+                            if back['non_empty'] == 1 and back['nums'] == 0 and back['first_val'] and not back['is_note']:
+                                table_title = back['first_val']
+                                break
                     had_data = False
 
     tables.append((curr_start, max_row, table_title))
     return tables
+
+def _row_numbers(grid: Dict[Tuple[int, int], Any], r: int, max_col: int) -> List[float]:
+    vals = []
+    for c in range(2, max_col + 1):
+        v = grid.get((r, c))
+        if is_num_or_date(v) and not isinstance(v, datetime):
+            vals.append(parse_numeric(v))
+    return vals
+
+
+def _is_year_header_row(grid: Dict[Tuple[int, int], Any], r: int, max_col: int) -> bool:
+    """Dòng mà mọi giá trị số đều là năm (1900-2100) và dòng kế tiếp có số liệu không phải năm."""
+    vals = _row_numbers(grid, r, max_col)
+    if len(vals) < 2 or not all(float(v).is_integer() and 1900 <= v <= 2100 for v in vals):
+        return False
+    for look in range(r + 1, r + 5):  # bỏ qua vài dòng trống/nhãn nhóm giữa header và dữ liệu
+        nxt = _row_numbers(grid, look, max_col)
+        if len(nxt) >= 2:
+            return not all(float(v).is_integer() and 1900 <= v <= 2100 for v in nxt)
+    return False
+
 
 def parse_table_block(
     ws: openpyxl.worksheet.worksheet.Worksheet,
@@ -106,8 +185,11 @@ def parse_table_block(
             data_start = r
             break
         nums = sum(1 for c in range(2, max_col + 1) if is_num_or_date(grid.get((r, c))))
-        if nums >= 2:
-            r_next_strings = sum(1 for c in range(2, max_col + 1) if isinstance(grid.get((r+1, c)), str) and len(str(grid.get((r+1, c)))) > 3 and not str(grid.get((r+1, c))).replace(',','').replace('.','').isdigit())
+        if nums >= 2 and r < end_row and _is_year_header_row(grid, r, max_col):
+            continue  # dòng chỉ gồm năm (2022 | 2023 ...) là header, dữ liệu bắt đầu ở dòng sau
+        placeholders = sum(1 for c in range(2, max_col + 1) if is_placeholder(grid.get((r, c))))
+        if nums >= 2 or (nums >= 1 and placeholders >= 1):
+            r_next_strings = sum(1 for c in range(2, max_col + 1) if isinstance(grid.get((r+1, c)), str) and len(str(grid.get((r+1, c)))) > 3 and parse_numeric(grid.get((r+1, c))) is None and not is_placeholder(grid.get((r+1, c))))
             if r_next_strings >= 2:
                 continue
             data_start = r
@@ -164,12 +246,56 @@ def parse_table_block(
 
     # Kiểm tra xem Cột 1 có phải là Indent Level (như p4_t03) không
     c1_header = unique_col_names[0].lower() if unique_col_names else ""
-    is_indent_col = 'indent' in c1_header or any(
-        isinstance(grid.get((r, 1)), int) and grid.get((r, 1)) in [0, 1, 2, 3, 4]
-        for r in range(data_start, min(data_start + 5, end_row + 1))
-    )
+    first_col_vals = [grid.get((r, 1)) for r in range(data_start, min(data_start + 5, end_row + 1))]
+    looks_like_row_number = (
+        len(first_col_vals) >= 3
+        and all(isinstance(v, int) for v in first_col_vals)
+        and all(b - a == 1 for a, b in zip(first_col_vals, first_col_vals[1:]))
+    )  # cột 'No' = 1,2,3,4,5 là số thứ tự, không phải mức thụt lề
+    is_indent_col = 'indent' in c1_header or (not looks_like_row_number and any(
+        isinstance(v, int) and v in [0, 1, 2, 3, 4] for v in first_col_vals
+    ))
 
     label_col_idx = 2 if is_indent_col and max_col >= 2 else 1
+
+    # Cột 1 gần như trống (vd. nhãn năm/quý nằm ở cột 2-3): dùng các cột đầu có chữ/năm làm nhãn dòng
+    label_cols = [label_col_idx]
+    body_rows = [r for r in range(data_start, end_row + 1)
+                 if any(grid.get((r, c)) not in (None, '') for c in range(1, max_col + 1))]
+    if not is_indent_col and body_rows:
+        def _filled(c):
+            return sum(1 for r in body_rows if grid.get((r, c)) not in (None, '')) / len(body_rows)
+        def _labelish(c):
+            vals = [grid.get((r, c)) for r in body_rows if grid.get((r, c)) not in (None, '')]
+            if not vals:
+                return False
+            ok = sum(1 for v in vals if (isinstance(v, str) and parse_numeric(v) is None)
+                     or (isinstance(v, int) and 1900 <= v <= 2100))
+            return ok / len(vals) >= 0.8
+        if _filled(1) < 0.1:
+            cand = []
+            for c in range(2, min(max_col, 4) + 1):
+                if _filled(c) >= 0.2 and _labelish(c):
+                    cand.append(c)
+                else:
+                    break
+            if cand:
+                label_cols = cand
+                label_col_idx = cand[-1]
+
+    # Thụt lề của nhãn (khoảng trắng đầu dòng / alignment.indent) cho bảng không có cột Indent Level
+    widths = {}
+    use_indent = False
+    if not is_indent_col and len(label_cols) == 1:
+        for r in body_rows:
+            raw = grid.get((r, label_col_idx))
+            row_nums = sum(1 for v in [grid.get((r, c)) for c in range(label_col_idx + 1, max_col + 1)]
+                           if is_num_or_date(v) or is_placeholder(v))
+            if raw not in (None, '') and row_nums > 0:
+                widths[r] = indent_width(ws, r, label_col_idx, raw)
+        use_indent = len(set(widths.values())) >= 2
+    ind_stack: List[Tuple[int, str]] = []
+    last_year_label = ""
 
     # 5. Xây dựng Row_Path phân cấp
     data_rows = []
@@ -178,7 +304,7 @@ def parse_table_block(
     indent_stack: Dict[int, str] = {}
 
     for r in range(header_end + 1, data_start):
-        s_val = clean_text(grid.get((r, label_col_idx)))
+        s_val = clean_label(grid.get((r, label_col_idx)))
         if s_val and not is_note_row(s_val):
             major_section = s_val
 
@@ -187,7 +313,21 @@ def parse_table_block(
         if all(v is None or str(v).strip() == '' for v in row_raw):
             continue
 
-        raw_label = clean_text(row_raw[label_col_idx - 1])
+        if len(label_cols) > 1:
+            parts = [clean_label(row_raw[c - 1]) for c in label_cols]
+            if parts[0]:
+                last_year_label = parts[0]
+            elif any(parts[1:]):
+                parts[0] = last_year_label  # năm bị bỏ trống ở các dòng quý -> điền xuống
+            raw_label = " | ".join(p for p in parts if p)
+        else:
+            raw_label = clean_label(row_raw[label_col_idx - 1])
+            # Nhãn quý rút gọn ('Q3') kế thừa năm của dòng trước ('2010 Q2')
+            if re.fullmatch(r'Q[1-4]', raw_label) and last_year_label:
+                raw_label = f"{last_year_label} {raw_label}"
+            ym = re.match(r'^(\d{4})\b', raw_label)
+            if ym:
+                last_year_label = ym.group(1)
         if is_note_row(raw_label):
             continue
 
@@ -195,9 +335,11 @@ def parse_table_block(
         num_count = sum(1 for v in other_vals if is_num_or_date(v))
 
         # Trường hợp 1: Dòng thuần tiêu đề nhóm chính (nums == 0)
-        if raw_label != "" and num_count == 0:
+        placeholder_count = sum(1 for v in other_vals if is_placeholder(v))
+        if raw_label != "" and num_count == 0 and placeholder_count == 0:
             major_section = raw_label
             sub_section = ""
+            ind_stack = []
             continue
 
         # Trường hợp 2: Có cột Indent Level (cây phân cấp theo mức thụt lề số)
@@ -211,6 +353,14 @@ def parse_table_block(
             indent_stack = {k: v for k, v in indent_stack.items() if k <= lvl}
             row_path = " | ".join(indent_stack[k] for k in sorted(indent_stack.keys()))
             current_sec = indent_stack.get(0, major_section)
+        elif use_indent:
+            w = widths.get(r, 0)
+            while ind_stack and ind_stack[-1][0] >= w:
+                ind_stack.pop()
+            path_parts = [p for p in [major_section] + [lbl for _, lbl in ind_stack] + [raw_label] if p]
+            row_path = " | ".join(path_parts)
+            ind_stack.append((w, raw_label))
+            current_sec = major_section
         else:
             # Group parent detection (BLS demographics + general hierarchical stubs):
             is_group_parent = (
@@ -232,18 +382,17 @@ def parse_table_block(
         # Làm sạch kiểu dữ liệu các ô
         cleaned_row = []
         for val in row_raw:
-            if val is None or str(val).strip() in ['', '-']:
+            if val is None or str(val).strip() == '':
                 cleaned_row.append(None)
             elif isinstance(val, (int, float, datetime)):
                 cleaned_row.append(val)
             else:
-                s = str(val).strip().replace(',', '')
-                try:
-                    if '.' in s:
-                        cleaned_row.append(float(s))
-                    else:
-                        cleaned_row.append(int(s))
-                except ValueError:
+                num = parse_numeric(val)
+                if num is not None:
+                    cleaned_row.append(num)
+                elif is_placeholder(val):
+                    cleaned_row.append(None)
+                else:
                     cleaned_row.append(val)
 
         data_rows.append([row_path, current_sec, sub_section] + cleaned_row)
@@ -251,6 +400,23 @@ def parse_table_block(
     final_cols = ["Row_Path", "Section", "Sub_Section"] + unique_col_names
     df = pd.DataFrame(data_rows, columns=final_cols)
     return df
+
+def _mostly_code_columns(df: pd.DataFrame) -> bool:
+    cols = [c for c in df.columns[3:] if not str(c).startswith(('Col_', 'Column_'))]
+    return len(cols) >= 2 and sum(1 for c in cols if _CODE_RE.match(str(c))) / len(cols) >= 0.7
+
+
+def _inherit_header(df: pd.DataFrame, base_df: Optional[pd.DataFrame]) -> pd.DataFrame:
+    """Khối sau chỉ có mã cột -> dùng tên cột của khối đầu (cùng số cột) kèm mã để vẫn tra được theo tên."""
+    if base_df is None or len(df.columns) != len(base_df.columns) or not _mostly_code_columns(df):
+        return df
+    names = list(df.columns[:3])
+    for code, base in zip(df.columns[3:], base_df.columns[3:]):
+        names.append(f"{base} | {code}" if _CODE_RE.match(str(code)) and not str(base).startswith(('Col_', 'Column_')) else code)
+    out = df.copy()
+    out.columns = names
+    return out
+
 
 def parse_workbook(file_path: str) -> Dict[str, pd.DataFrame]:
     """Parse toàn bộ workbook Excel, tự động tách các bảng độc lập trên cùng sheet."""
@@ -284,15 +450,47 @@ def parse_workbook(file_path: str) -> Dict[str, pd.DataFrame]:
             if not df.empty:
                 sheets_df[sheet_name] = df
         else:
+            base_df = None
             for idx, (start_r, end_r, title) in enumerate(table_ranges):
                 df = parse_table_block(ws, grid, start_r, end_r, max_col)
-                if not df.empty:
-                    clean_title = re.sub(r'[^\w\s-]', '', title).strip() or f"Table_{idx+1}"
-                    tbl_key = f"{sheet_name} - {clean_title}"
-                    sheets_df[tbl_key] = df
+                if df.empty:
+                    continue
+                df = _inherit_header(df, base_df)
+                if base_df is None and not _mostly_code_columns(df):
+                    base_df = df
+                clean_title = re.sub(r'[^\w\s-]', '', title).strip() or f"Table_{idx+1}"
+                tbl_key = f"{sheet_name} - {clean_title}"
+                if tbl_key in sheets_df:
+                    tbl_key = f"{tbl_key} ({idx+1})"
+                sheets_df[tbl_key] = df
 
     return sheets_df
 
+
+def parse_raw_workbook(file_path: str) -> Dict[str, pd.DataFrame]:
+    """Lưới ô nguyên bản (ô gộp đã điền, số dạng chuỗi đã chuyển thành số), chỉ số dòng = số dòng Excel.
+    Đường lui cho LLM khi bảng đã parse sai cấu trúc."""
+    wb = openpyxl.load_workbook(file_path, data_only=True)
+    out = {}
+    for ws in wb:
+        if ws.max_row < 1 or ws.max_column < 1:
+            continue
+        grid = [[ws.cell(r, c).value for c in range(1, ws.max_column + 1)] for r in range(1, ws.max_row + 1)]
+        for rng in ws.merged_cells.ranges:
+            val = ws.cell(rng.min_row, rng.min_col).value
+            for r in range(rng.min_row, rng.max_row + 1):
+                for c in range(rng.min_col, rng.max_col + 1):
+                    grid[r - 1][c - 1] = val
+        cleaned = []
+        for row in grid:
+            new = []
+            for v in row:
+                num = parse_numeric(v) if isinstance(v, str) else None
+                new.append(num if num is not None else (None if is_placeholder(v) else v))
+            cleaned.append(new)
+        df = pd.DataFrame(cleaned, index=range(1, len(cleaned) + 1), columns=range(1, ws.max_column + 1))
+        out[ws.title] = df
+    return out
 
 def generate_table_summary(sheets_df: Dict[str, pd.DataFrame]) -> str:
     """Tạo tóm tắt cấu trúc bảng chi tiết kèm danh sách Row_Path cho LLM prompt."""

@@ -1,6 +1,6 @@
 """Kiểm tra submission.csv theo HUONG_DAN_NOP_BAI.md (mục 4).
 
-    python scripts/validate_submission.py --queries queries.json --submission submission.csv [--truth sample_submission.csv]
+    python scripts/validate_submission.py --queries data/p2/queries.json --submission output/submission.csv [--truth data/p2/sample_submission.csv]
 """
 import argparse
 import csv
@@ -62,7 +62,7 @@ def exact_match(submission_path: str, truth_path: str) -> None:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--queries", default="queries.json")
+    ap.add_argument("--queries", default="data/p2/queries.json")
     ap.add_argument("--submission", default="submission.csv")
     ap.add_argument("--truth", default=None, help="CSV đáp án để tính Exact Match (tuỳ chọn)")
     args = ap.parse_args()

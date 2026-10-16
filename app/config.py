@@ -5,20 +5,25 @@ class Settings(BaseSettings):
     app_name: str = "AI Tai Nang 2026 - Excel QA"
     debug: bool = False
     
-    # Provider: 'openrouter' (chấm thi chính thức) hoặc 'gemini' (thử nghiệm cục bộ)
-    llm_provider: str = "openrouter"
-    
-    # Gemini Configuration
-    gemini_api_key: Optional[str] = None
-    gemini_model: str = "gemini-3.1-flash-lite"
     
     # OpenRouter Configuration (for official competition grading)
     openrouter_api_key: Optional[str] = None
     openrouter_model: str = "qwen/qwen3.7-flash"
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    # Qwen3.7-Flash mặc định có reasoning: chậm (~20s/lệnh) và tốn token. Tắt để tối ưu thời gian/token.
+    openrouter_reasoning_effort: str = "none"  # none | low | medium | high
+    workers: int = 5
+    run_deadline_seconds: int = 35 * 60  # đề: tối đa 40 phút/20 câu; chừa biên để vẫn ghi được CSV
+    llm_timeout: int = 90
+    llm_max_attempts: int = 5
+    llm_max_backoff: float = 30.0
     
     # Pipeline Settings
-    max_retries: int = 2
+    max_retries: int = 3
+    enable_direct_fallback: bool = True
+    self_consistency: bool = False  # bật bằng SELF_CONSISTENCY=true: ~2x token/thời gian, chưa chứng minh tăng EM
+    sc_temperature: float = 0.3
+    fallback_table_chars: int = 6000
     max_output_tokens: int = 2048
     execution_timeout: int = 15
 
