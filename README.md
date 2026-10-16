@@ -9,26 +9,15 @@ Hệ thống trả lời câu hỏi trên file Excel phân cấp (header nhiều
 ## 1. Kiến trúc
 
 ```mermaid
-flowchart TD
-    X["File .xlsx"] --> PRE
-    subgraph PRE["1. Tiền xử lý tất định (openpyxl, không gọi LLM)"]
-        A1["Đọc giá trị cache, bung ô gộp"] --> A2["Tách nhiều bảng trên một sheet,<br/>bỏ dòng ghi chú / siêu dữ liệu đầu khối"]
-        A2 --> A3["Header phẳng 'Nhóm | Chỉ số | Năm'<br/>+ Row_Path phân cấp (chuỗi cột nhãn thưa,<br/>thụt lề, cột Indent Level, dòng tiêu đề nhóm)"]
-        A3 --> A4["Làm sạch số / placeholder / footnote,<br/>bỏ cột đệm trống"]
-    end
-    A4 --> DFS["dfs: Dict[bảng → DataFrame] + raw_dfs: lưới ô thô"]
-    Q["Câu hỏi"] --> LNK["Liên kết thực thể tất định (linker):<br/>nhãn dòng / nhóm cha / cột có thật trong bảng<br/>xuất hiện trong câu hỏi"]
-    DFS --> SUM["TABLE SUMMARY (cột, Row_Path, mẫu dòng)<br/>+ lưới ô thô cho sheet nghi parse sai"]
-    SUM --> PROMPT
-    LNK --> PROMPT["Prompt: system (quy ước + luật) + bảng + câu hỏi"]
-    PROMPT --> LLM["Qwen3.7-Flash (OpenRouter)<br/>sinh mã pandas → FINAL_ANSWER"]
-    LLM --> EXE["Executor hạn chế (timeout 15 s, bắt traceback)"]
-    EXE -- "lỗi / rỗng / NaN / 0 / 'not found'" --> RETRY["Thử lại ≤ 3 lần: gửi lại mã + lỗi + bảng"]
-    RETRY --> LLM
-    EXE -- "kết quả" --> FMT["Formatter: làm tròn half-up, số chữ số thập phân<br/>đa ngôn ngữ, Yes/No, dấu của mức giảm"]
-    RETRY -- "hết lượt" --> FB["Đường lui: hỏi thẳng LLM trên bảng CSV cắt gọn"]
+flowchart LR
+    X[".xlsx"] --> PRE["<b>Tiền xử lý</b><br/>(tất định)<br/>bung ô gộp, tách bảng,<br/>header A | B + Row_Path"]
+    PRE --> SUM["<b>Prompt</b><br/>TABLE SUMMARY<br/>+ entity links"]
+    Q["Câu hỏi"] --> LNK["<b>Linker</b><br/>nhãn dòng/cột<br/>có trong câu hỏi"] --> SUM
+    SUM --> LLM["<b>Qwen3.7-Flash</b><br/>sinh mã pandas"] --> EXE["<b>Executor</b><br/>timeout 15 s"]
+    EXE -- "lỗi / rỗng / 0<br/>thử lại ≤ 3" --> LLM
+    EXE -- "hết lượt" --> FB["Hỏi thẳng LLM<br/>trên CSV"]
+    EXE --> FMT["<b>Formatter</b><br/>→ submission.csv"]
     FB --> FMT
-    FMT --> OUT["submission.csv (UTF-8, sắp xếp theo id, rỗng nếu không trả lời được)"]
 ```
 
 CLI (`app/cli.py`) chạy các câu hỏi song song bằng `multiprocessing` (mặc định 5 tiến trình), có deadline 35 phút để luôn ghi được CSV, gọi OpenRouter với thử lại theo `Retry-After`/backoff mũ cho 429/5xx/402 tạm thời, thống kê token và chi phí.
