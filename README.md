@@ -215,10 +215,10 @@ docker run --rm --env-file .env -v "$PWD:/app" -w /app -e PYTHONPATH=/app --entr
 ### 5.5. Đóng gói bài nộp
 
 ```bash
-docker run --rm -v "$PWD:/src" -w /src --entrypoint python ai2026-tableqa scripts/package_submission.py team001
+docker run --rm -v "$PWD:/src" -w /src --entrypoint python ai2026-tableqa scripts/package_submission.py
 ```
 
-Tạo `dist/team001.zip` với `Dockerfile` ở gốc, kiểm tra không chứa `.env` và dung lượng ≤ 100 MB.
+Tạo `dist/AI26C0062.zip` (mã đội **AI26C0062**, tên tệp phải khớp chính xác) với `Dockerfile` ở gốc, kiểm tra không chứa `.env` và dung lượng ≤ 100 MB. Có thể nộp lại nhiều lần; bản gần nhất trước hạn được dùng để chấm.
 
 ---
 
@@ -277,4 +277,3 @@ Tất cả số liệu dưới đây dùng **`qwen/qwen3.7-flash` qua OpenRouter
 4. **Entity linking dựa vào việc nhãn của bảng xuất hiện nguyên văn (hoặc đủ các từ) trong câu hỏi**; câu hỏi diễn đạt khác nhiều so với nhãn sẽ không được liên kết.
 5. **Mới đo trên 2 bộ công khai (50 câu)**, chưa kiểm thử trên tập ẩn thật; chưa có **template nộp bài của BTC** để đối chiếu.
 6. **Chưa đo `reasoning.effort` mức `low`/`medium`** (hiện chỉ so `none` và mặc định bật).
-7. **Tên đội** khi đóng gói (`scripts/package_submission.py`) còn dùng giá trị mẫu `team001`.

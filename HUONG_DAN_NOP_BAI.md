@@ -8,11 +8,11 @@
 ## 1. Cấu trúc bài nộp
 
 - Bài nộp là **một tệp ZIP không quá 100 MB**.
-- Tên file zip đặt theo **tên đội**, ví dụ đội `team001` → `team001.zip`.
+- Tên file zip đặt theo **mã đội**. Đội của chúng ta: mã **`AI26C0062`** → **`AI26C0062.zip`** (tên tệp phải khớp chính xác mã đội).
 - **Chỉ `Dockerfile` bắt buộc nằm ngay ở thư mục gốc** của ZIP; tên và cấu trúc các tệp còn lại do đội tự chọn:
 
 ```
-team001.zip
+AI26C0062.zip
 |-- Dockerfile
 `-- ...mã nguồn và tệp cần thiết...
 ```
@@ -73,11 +73,11 @@ id,answer
 
 ### A. Đóng gói ZIP
 - [x] `Dockerfile` nằm ở gốc repo → gốc ZIP (`scripts/package_submission.py` kiểm tra lại).
-- [x] Tên ZIP = tên đội (`python scripts/package_submission.py <ten_doi>` → `dist/<ten_doi>.zip`).
+- [x] Tên ZIP = mã đội `AI26C0062` (`python scripts/package_submission.py` → `dist/AI26C0062.zip`).
 - [x] ZIP ≤ 100 MB (script báo lỗi nếu vượt).
 - [x] ZIP **không** chứa `.env`, `.venv`, `.git`, `__pycache__`, file PDF, `output/`, `dist/`.
 - [x] Không có API key trong mã nguồn (`.env` bị loại khỏi ZIP và khỏi Docker build context qua `.dockerignore`).
-- [ ] Điền đúng **tên đội** khi chạy script đóng gói.
+- [x] Mã đội `AI26C0062` đã đặt mặc định trong `scripts/package_submission.py`.
 
 ### B. Docker image
 - [x] Base image `python:3.12-slim`, build cho `linux/amd64`, không cần GPU.
@@ -127,4 +127,25 @@ id,answer
 - [x] `scripts/validate_submission.py` báo hợp lệ.
 - [x] Giải nén thử `dist/<ten_doi>.zip` vào thư mục trống → build & chạy lại được.
 
-> ⚠️ **Còn lại:** đánh giá lại bằng `qwen/qwen3.7-flash` (EM, giây/câu, token/câu gồm cả reasoning, cost) và điền tên đội thật khi đóng gói.
+> ⚠️ **Còn lại:** đánh giá lại bằng `qwen/qwen3.7-flash` (EM, giây/câu, token/câu gồm cả reasoning, cost). Mã đội đã được điền sẵn (`AI26C0062`).
+
+---
+
+## Thông tin cổng nộp bài (từ trang nộp)
+
+- **Mã đội: `AI26C0062`** → tệp nộp bắt buộc tên **`AI26C0062.zip`**.
+- **Được nộp và cập nhật liên tục trong thời gian thi.** Mọi lượt nộp đều được lưu; **bản gần nhất trước hạn là bản được dùng để chấm.**
+- Yêu cầu kỹ thuật bắt buộc (tóm tắt đúng như trang nộp):
+  - `Dockerfile` ở **thư mục gốc** của ZIP (không đặt trong thư mục con); các tệp còn lại tự tổ chức.
+  - Ảnh Docker **Linux amd64**, không GPU, chứa sẵn mã nguồn và thư viện; khai báo `ENTRYPOINT` để nhận tham số chấm.
+  - Chương trình nhận thư mục `.xlsx` cùng `queries.json` và tạo `submission.csv` đúng hai cột `id,answer`; mỗi `id` đúng một dòng, `answer` chỉ chứa đáp án cuối.
+  - Nếu dùng LLM: hỗ trợ `qwen/qwen3.7-flash` qua OpenRouter; khóa API cấu hình bên ngoài mã nguồn; tổng chi phí **≤ 0,10 USD/câu hỏi** kể cả retry.
+  - Chạy **tối đa 40 phút cho 20 câu** trên máy **6 vCPU, 12 GB RAM**; tổng dung lượng sử dụng khi chạy **không quá 1 GB** (theo Giải đáp thắc mắc Câu 03: 1 GB là *disk*, RAM tối đa 4 GB).
+- **Cam kết khi nộp:** người nộp xác nhận tệp đáp ứng toàn bộ yêu cầu kỹ thuật trên và **không chứa API key, mật khẩu hoặc khóa riêng**. Trước khi nộp cần kiểm tra ZIP bằng `scripts/package_submission.py` (script này loại `.env` và kiểm tra tệp bí mật).
+
+### Checklist ngay trước khi bấm nộp
+- [ ] `python scripts/package_submission.py` → `dist/AI26C0062.zip` (đúng tên, `Dockerfile` ở gốc, ≤ 100 MB).
+- [ ] Giải nén ZIP vào thư mục trống, `docker build --platform linux/amd64`, chạy với 6 tham số và `scripts/validate_submission.py` báo hợp lệ.
+- [ ] Rà lại ZIP không có `.env`, key, `.git`, `output/`, `dist/`, PDF.
+- [ ] Kiểm tra thời gian/chi phí/token ở log cuối lượt chạy (hiện: ~40 s cho 30 câu, ~$0,004).
+

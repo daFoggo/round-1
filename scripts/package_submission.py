@@ -1,12 +1,13 @@
 """Đóng gói bài nộp: dist/<team>.zip với Dockerfile ở gốc, không chứa secrets.
 
-    python scripts/package_submission.py <team_name>
+    python scripts/package_submission.py [team_code]   # mặc định: AI26C0062
 """
 import os
 import sys
 import zipfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+TEAM_CODE = "AI26C0062"  # mã đội; tên tệp nộp phải khớp chính xác: AI26C0062.zip
 MAX_BYTES = 100 * 1024 * 1024
 
 INCLUDE = [
@@ -46,10 +47,10 @@ def iter_files():
 
 
 def main() -> None:
-    if len(sys.argv) != 2:
+    if len(sys.argv) > 2:
         print(__doc__)
         sys.exit(2)
-    team = sys.argv[1]
+    team = sys.argv[1] if len(sys.argv) == 2 else TEAM_CODE
     os.makedirs(os.path.join(ROOT, "dist"), exist_ok=True)
     zip_path = os.path.join(ROOT, "dist", f"{team}.zip")
 
