@@ -350,10 +350,11 @@ Vì mỗi bộ dữ liệu mới lại lộ kiểu bố cục mới, ta đo tr�
 | Trước (chỉ số đã sửa lỗi đếm ô trống) | 62,2% | 60,3% |
 | + bỏ cột không tên hoàn toàn trống (cột đệm do vùng định dạng thừa của sheet) | 69,8% | 64,4% |
 | + cắt dòng siêu dữ liệu/ghi chú đầu khối header (`Back to contents`, `Source:`, đường dẫn, ô tham chiếu) | **73,9%** | **70,1%** |
+| + chuỗi cột nhãn thưa hợp nhất (nhóm lớn ở cột A, nhóm nhỏ ở cột B, mục ở cột C; điền xuống ô thưa; cột điền < 5% coi là đệm; cần một cột nhãn dày và cột số liền sau) | **75,6%** | **73,7%** |
 
 - Một lần thử cắt header theo "phủ ≥ 20% cột dữ liệu" cho dev 74,7% nhưng làm mất tên cột ở `p2_t02`, `p2_t08` (header hợp lệ có dòng trống và dòng nhãn nhóm thưa); đã gỡ, nhờ so snapshot `Row_Path`/tên cột của p2/p4 trước và sau mỗi thay đổi.
-- Chỉ số này đo *độ trung thực của parse*, chưa chứng minh tăng EM: bench 3 lần sau các sửa đổi cho p5 24,7/50 (trước 26,3, trong nhiễu ±1,5), p2 29,3/30, p4 20/20. Cần thêm bộ câu hỏi ngoài lớn hơn để kết luận về EM.
-- Cụm lỗi còn lại trên dev: nhãn dòng rỗng (53; một phần là bảng ma trận số không có nhãn nên là báo động giả), cột không tên có dữ liệu (50), ô dư (17), tên cột chứa dữ liệu (16), thiếu phủ ô (10).
+- Chỉ số này đo *độ trung thực của parse*, chưa chứng minh tăng EM: bench 3 lần sau các sửa đổi cho p5 24,7 → **27,7**/50 (trước 26,3; nhiễu ±1,5), p2 29,0/30, p4 19,3/20 (đều trong nhiễu). Cần thêm bộ câu hỏi ngoài lớn hơn để kết luận về EM.
+- Cụm lỗi còn lại trên dev: cột không tên có dữ liệu (51; phần lớn là bảng chữ không có hàng tiêu đề thật, chưa có luật tổng quát), nhãn dòng rỗng (45; một phần là bảng ma trận số không có nhãn nên là báo động giả, một phần là sheet nhiều bảng bị tách quá nhỏ), ô dư (17), tên cột chứa dữ liệu (16), thiếu phủ ô (10).
 
 ## 7. Vấn đề còn mở (Open Issues)
 

@@ -327,30 +327,25 @@ def parse_table_block(
             ok = sum(1 for v in vals if (isinstance(v, str) and parse_numeric(v) is None)
                      or (isinstance(v, int) and 1900 <= v <= 2100))
             return ok / len(vals) >= 0.8
-        if _filled(1) < 0.1:
-            cand = []
-            for c in range(2, min(max_col, 4) + 1):
-                if _filled(c) >= 0.2 and _labelish(c):
-                    cand.append(c)
-                else:
-                    break
-            if cand:
-                label_cols = cand
-                label_col_idx = cand[-1]
-        else:
-            # Nhiều cột nhãn dạng chữ liên tiếp ngay từ cột 1 (vd. 'Region | Purpose', 'Set | Time point'), sau đó là cột số
-            cand = []
-            for c in range(1, min(max_col, 4) + 1):
-                if _filled(c) >= 0.2 and _labelish(c):
-                    cand.append(c)
-                else:
-                    break
-            nxt = cand[-1] + 1 if cand else None
-            if len(cand) >= 2 and nxt is not None and nxt <= max_col:
+        # Chuỗi cột nhãn chữ liên tiếp từ trái sang (nhóm lớn ở cột A, nhóm nhỏ ở cột B, mục ở cột C; hoặc 'Region | Purpose'):
+        # bỏ qua cột trống hoàn toàn, nhận mọi cột nhãn chữ cho tới cột đầu tiên không phải nhãn. Ô thưa được điền xuống từ
+        # dòng trên. Điều kiện: có ít nhất một cột nhãn dày (>= 20%) và cột ngay sau chuỗi chủ yếu là số/dấu thay thế.
+        chain = []
+        for c in range(1, min(max_col, 5) + 1):
+            if _filled(c) < 0.05:  # trống hoặc chỉ vài ô lẻ (ghi chú, dấu): coi là cột đệm
+                continue
+            if _labelish(c):
+                chain.append(c)
+            else:
+                break
+        chain = chain[:4]
+        if chain and (len(chain) >= 2 or chain[0] != 1) and any(_filled(c) >= 0.2 for c in chain):
+            nxt = next((c for c in range(chain[-1] + 1, max_col + 1) if _filled(c) > 0), None)
+            if nxt is not None:
                 nxt_vals = [grid.get((r, nxt)) for r in body_rows if grid.get((r, nxt)) not in (None, '')]
                 if nxt_vals and sum(1 for v in nxt_vals if is_num_or_date(v) or is_placeholder(v)) / len(nxt_vals) >= 0.6:
-                    label_cols = cand
-                    label_col_idx = cand[-1]
+                    label_cols = chain
+                    label_col_idx = chain[-1]
 
     if forced and forced.get("label_cols") and not is_indent_col:
         label_cols = list(forced["label_cols"])
