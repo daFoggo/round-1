@@ -72,6 +72,8 @@ ROBUST DATA ANALYSIS GUIDELINES:
 
 10. UNITS: report numbers exactly as they appear in the table. Do NOT multiply or divide by a unit note such as '(in thousands)', '(in millions)' or '%' unless the question explicitly asks to convert units.
 
+11. COUNTING: when asked "how many <entities> ..." count only the individual entities (leaf rows). Exclude 'Total', 'All', 'Overall', subtotal rows and parent/group rows whose Row_Path is a prefix of other rows, unless the question is about those rows. Apply the comparison exactly as worded ("above/more than" = strict >, "at least/equal to or greater" = >=) and ignore missing values.
+
 GENERAL PROGRAMMING PATTERNS:
 - Pattern A (Aggregating across multiple metric columns for a specific row):
   ```python
