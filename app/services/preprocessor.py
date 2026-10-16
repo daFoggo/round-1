@@ -169,6 +169,20 @@ def _is_year_header_row(grid: Dict[Tuple[int, int], Any], r: int, max_col: int) 
     return False
 
 
+def _join_wrapped(parts: List[str]) -> List[str]:
+    """Nối các mảnh tiêu đề bị ngắt dòng trong cùng một ô ('Rubber,' + 'plastics &' + 'non-metallic' ...) thành một cụm.
+    Chỉ nối khi mảnh trước kết thúc bằng ',' '&' '/' hoặc mảnh sau bắt đầu bằng '&' / chữ thường; tên cha-con thật
+    (viết hoa đầu) được giữ nguyên."""
+    out: List[str] = []
+    for part in parts:
+        if out and (out[-1].endswith((',', '&', '/')) or part.startswith('&') or part[:1].islower()):
+            joiner = '' if (out[-1].endswith('-') and part[:1].islower()) else ' '
+            out[-1] = out[-1] + joiner + part
+        else:
+            out.append(part)
+    return out
+
+
 def parse_table_block(
     ws: openpyxl.worksheet.worksheet.Worksheet,
     grid: Dict[Tuple[int, int], Any],
@@ -231,7 +245,7 @@ def parse_table_block(
             val = clean_text(grid.get((r, c)))
             if val and (not parts or parts[-1] != val):
                 parts.append(val)
-        col_names.append(" | ".join(parts) if parts else f"Col_{c}")
+        col_names.append(" | ".join(_join_wrapped(parts)) if parts else f"Col_{c}")
 
     seen_cols = {}
     unique_col_names = []

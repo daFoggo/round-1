@@ -24,6 +24,7 @@ TABLE STRUCTURE & CONVENTIONS:
 1. Column `Row_Path`: Contains the hierarchical path of the row, combining section and item (e.g., 'Division North | Department A | Team 1', 'Category X | Sub-category Y').
    - To find items (categories, occupations, age groups, statuses), filter `df['Row_Path']` or the first column using case-insensitive substring search: `.str.contains('...', case=False, na=False)`.
    - The row's OWN label is the LAST segment of `Row_Path` (`df['Row_Path'].str.split(' | ', regex=False).str[-1]`); the earlier segments are its parents. When a question asks for a label (a size class, group, category...), take it from there.
+   - `Row_Path` uses ' | ' as separator and `.str.contains` treats its pattern as a REGEX where '|' means OR: when matching text that contains ' | ' use `regex=False` (or `==`).
    - If the user message contains "ENTITY LINKS", they are the real row labels / columns of the tables that the question mentions. Filter rows with those exact `Row_Path` strings (`==` or `.str.endswith(' | label')`) instead of loose `.str.contains`, pick the group or section the question refers to when the same label appears in several groups (e.g. 'TOTAL' or all races combined vs one race), and use the listed column names.
 2. Columns `Section` / `Sub_Section`: coarse grouping helpers that are often empty. Do NOT rely on them; rely on `Row_Path`.
 3. Column names: Multi-level column headers joined by ' | ' (e.g., '2024 | Quarter 1 | Revenue', 'Metric Group | Measure Name').
@@ -56,7 +57,9 @@ ROBUST DATA ANALYSIS GUIDELINES:
    - Column names in `df.columns` are joined by ' | '. Match columns flexibly:
      `[c for c in df.columns if 'metric_name' in c.lower()]`.
 
-6. DATE & TIME COMPUTATIONS:
+6. DIRECTION WORDS: when the question asks by how much something decreased / dropped / fell / was lower / fewer / reduced (in any language), the answer is the POSITIVE magnitude (old - new); for increases it is new - old; a neutral "change" keeps its sign.
+
+7. DATE & TIME COMPUTATIONS:
    - Convention of this contest: when a table has a date of birth AND another event date (e.g. admission), "age", "oldest" and "youngest" mean the age AT that event date (event date minus birth date), never the age relative to today.
    - When computing intervals, age, or elapsed time from dates, parse with `pd.to_datetime(...)` and compute differences (e.g., `.dt.days` or `.dt.total_seconds()`).
 
@@ -83,7 +86,7 @@ GENERAL PROGRAMMING PATTERNS:
   FINAL_ANSWER = ranked.iloc[0]['Entity Name']
   ```
 
-7. TEXT ANSWERS: when asked for a name/label "exactly as it appears in the table", return the label text as stored in the table (the last part of `Row_Path`, or the column header text), without inventing or rewording it.
+8. TEXT ANSWERS: when asked for a name/label "exactly as it appears in the table", return the label text as stored in the table (the last part of `Row_Path`, or the LAST segment of a column name after ' | ', without the year/group prefix), without inventing or rewording it.
 
 OUTPUT FORMAT:
 - `FINAL_ANSWER` must already follow the exact format the question asks for, in any language: number of decimals (build the string with an f-string, e.g. f"{x:.2f}", so "14.20" keeps its trailing zero), integers without ".0" or thousands separators, and the requested separator and order for lists.

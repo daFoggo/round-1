@@ -226,18 +226,18 @@ Tạo `dist/team001.zip` với `Dockerfile` ở gốc, kiểm tra không chứa 
 
 Tất cả số liệu dưới đây dùng **`qwen/qwen3.7-flash` qua OpenRouter** (model chấm thi), reasoning tắt, 5 tiến trình song song, trong Docker (`--memory 4g --cpus 6`). Đáp án lấy từ `sample_submission.csv` của từng bộ công khai.
 
-### 6.1. Kết quả theo bộ dữ liệu công khai
+### 6.1. Kết quả theo bộ dữ liệu công khai (cấu hình chốt)
 
-| Bộ | Số lần chạy | Exact Match | Thời gian cả bộ | Token / lần chạy | Chi phí / lần chạy |
+Đo bằng `scripts/bench.py --runs 4` (mỗi lần chạy là một lượt CLI đầy đủ):
+
+| Bộ | Điểm từng lần chạy | Trung bình | Thời gian / lần chạy | Token / lần chạy | Chi phí / lần chạy |
 | :--- | :-: | :-: | :-: | :-: | :-: |
-| `data/p2` (30 câu, `id` số, nhiều ngôn ngữ) | 3 (có entity linking) | **29, 29, 30 / 30** | 36–39 s | ~123–126k (~4,1k/câu) | ~$0,004 |
-| `data/p4` (20 câu) | 2 (có entity linking) | **19, 20 / 20** | 23–36 s | ~72–77k (~3,7k/câu) | ~$0,0027 |
+| `data/p2` (30 câu, `id` số, nhiều ngôn ngữ) | 29, 29, 27, 30 | **28,8 / 30 (96%)** | ~39 s | ~125–130k (~4,2k/câu) | ~$0,004 |
+| `data/p4` (20 câu) | 20, 19, 20, 20 | **19,8 / 20 (99%)** | ~20 s | ~72–74k (~3,6k/câu) | ~$0,002 |
 
-Trước khi có entity linking: p2 dao động 24–28/30 (5+ lần chạy), p4 18–20/20.
-
-- RAM đỉnh quan sát khi chạy 5 tiến trình: ~280 MB (giới hạn đề: RAM 4 GB, disk 1 GB).
-- Thời gian ước tính cho 20 câu của tập ẩn: dưới 1 phút (giới hạn 40 phút).
-- Kết quả **dao động ±1–3 câu giữa các lần chạy giống hệt nhau** (Qwen không hoàn toàn xác định dù `temperature=0`). Mọi thay đổi prompt cần được đo qua nhiều lần chạy, không nên kết luận từ một lần.
+- **Không còn lỗi hệ thống**: không câu nào sai ≥ 2/4 lần; các câu sai còn lại là nhiễu (sai đúng một lần, thay đổi giữa các lần chạy).
+- RAM đỉnh quan sát khi chạy 5 tiến trình: ~280 MB (giới hạn đề: RAM 4 GB, disk 1 GB). Thời gian ước tính cho 20 câu của tập ẩn: dưới 1 phút (giới hạn 40 phút).
+- Qwen không hoàn toàn xác định dù `temperature=0` hoặc có `seed` (nhà cung cấp duy nhất là Alibaba), nên điểm dao động ±1–2 câu giữa các lần chạy. **Mọi kết luận phải dựa trên nhiều lần chạy.**
 
 ### 6.2. Các thí nghiệm đã thực hiện
 
@@ -249,6 +249,11 @@ Trước khi có entity linking: p2 dao động 24–28/30 (5+ lần chạy), p4
 | Gắn nhãn `[subtotal]` cho cột Total + quy tắc "đọc theo nghĩa đen" (thử trên Gemini) | Làm tệ hơn (5/7 → 2–3/7): model dùng nhãn để *loại* cột Total | **Đã gỡ**; thay bằng quy ước chính thức của BTC (trung bình trên mọi cột có mặt, kể cả Total) |
 | Quy tắc "ROW LOOKUP ORDER" (ưu tiên khớp chính xác nhãn dòng) | p2 trung bình ~26,3 so với ~27–28 trước đó | **Đã gỡ** |
 | **Entity linking tất định** (`app/services/linker.py`): liệt kê nhãn dòng/cột có thật trong bảng xuất hiện trong câu hỏi (kể cả nhóm cha và chữ CJK) vào prompt, không thêm lệnh gọi LLM | p2 24–28/30 → **29, 29, 30/30**; p4 18–19 → 19–20; token/câu gần như không đổi | **Giữ** (nguồn: CHESS entity retrieval, TableZoomer entity linking) |
+| Mở rộng entity linking: nhóm cha khớp theo "đủ các từ", dòng `BEST ROW` (giao nhóm cha + nhãn dòng, `Row_Path` đầy đủ), gợi ý toàn bộ cột số cho "average across all" | Sửa lỗi hệ thống p2 q10 (model ghép chuỗi + regex `\|` rồi chọn nhầm dòng `TOTAL`), q11, q12; p4_q007 ổn hơn | **Giữ** |
+| Nối các mảnh tiêu đề bị ngắt dòng (`Rubber,` / `plastics &` / ... → một cụm) | Tên cột khớp nguyên cụm với câu hỏi; parse p4_t02..t10 không đổi | **Giữ** |
+| Quy tắc prompt: `regex=False` cho chuỗi chứa ` \| `, hướng "giảm" cho kết quả dương, nhãn cột lấy đoạn cuối | Trung hoà theo A/B (A ≈ B ≈ 28/30 trên p2) | **Giữ** (có cơ sở, không làm tệ hơn) |
+| Ghi chú đơn vị trong bảng (`[In thousands]`, `[Percent distribution]`) đưa vào summary | p4: model nhân 1000 (`152987000`), `p4_q008` luôn sai; p2 q13 không cải thiện | **Đã gỡ** |
+| `seed` của OpenRouter | Vẫn dao động (q11 6/2, q10 2/6) | **Đã gỡ** |
 | Biểu quyết thích ứng 2–3 mẫu (self-consistency) | p2 29/30 và 26/30, tốn gấp đôi token và thời gian, chưa chứng minh tăng EM | **Đã gỡ hoàn toàn khỏi code** |
 
 ### 6.3. Quy ước của bộ dữ liệu đã xác nhận / suy ra
@@ -257,12 +262,19 @@ Trước khi có entity linking: p2 dao động 24–28/30 (5+ lần chạy), p4
 - "oldest / youngest / age" khi bảng có ngày sinh và ngày nhập học → tuổi **tại ngày nhập học** (suy ra từ `p4_q001`, `p4_q002`).
 - Đáp án phải đúng định dạng yêu cầu (số chữ số thập phân, số nguyên, thứ tự, dấu phân cách); BTC chuẩn hoá chữ thường/khoảng trắng/dấu khi so khớp.
 
+### 6.4. Quy trình kiểm thử và sửa lỗi
+
+1. Phần **tất định** (tiền xử lý, linker, formatter) kiểm tra offline bằng ảnh chụp kết quả parse của 26 file (vài giây, không nhiễu); parse p4 phải giữ nguyên.
+2. Phần **LLM/prompt** chỉ đánh giá bằng `scripts/bench.py --runs N`: câu sai ≥ 2/N lần là **lỗi hệ thống** (sửa), sai 1 lần là **nhiễu** (bỏ qua).
+3. Chỉ giữ thay đổi khi sửa một nguyên nhân tất định đã xác nhận hoặc trung bình nhiều lần chạy tăng hơn mức nhiễu (~1 câu); còn lại gỡ ngay.
+4. Dừng khi không còn lỗi hệ thống.
+
 ## 7. Vấn đề còn mở (Open Issues)
 
-1. **Vẫn còn dao động nhỏ giữa các lần chạy (±1 câu).** Các câu từng sai gần đây: `p2` q24 (`0.078` thay vì `0.871`, chọn nhầm ô), q27 (dấu âm: `-14.20` thay vì `14.20` khi hỏi "giảm bao nhiêu phần trăm"), `p4_q007` (trung bình lấy `3.08` thay vì `3.14`: model đôi khi loại cột Total dù quy ước BTC là lấy mọi cột).
-2. **Quy ước "average across all …" chưa được model tuân thủ ổn định** dù đã có trong prompt; có thể cần tính trước danh sách cột "toàn bộ cột số của dòng" ở tầng tiền xử lý.
-3. **Dấu của hiệu/độ giảm:** câu hỏi dạng "giảm bao nhiêu" đáp án chuẩn là số dương; chưa có quy tắc chuẩn hoá cho trường hợp này.
-4. **Tiền xử lý chưa phủ hết bố cục lạ.** Một số bảng tài chính (`p2_t09`, `p2_t10`) xếp nhóm cha/con chưa chính xác (ví dụ `Total assets...` nằm dưới nhóm `Available-for-sale ...`); khối tên cột chỉ có mã (`p2_t08`) xử lý bằng kế thừa header của khối đầu.
-5. **Mới chỉ đo trên 2 bộ công khai (50 câu), chưa kiểm thử trên tập ẩn thật** và chưa có **template nộp bài của BTC** để đối chiếu. Entity linking dựa vào việc nhãn của bảng xuất hiện nguyên văn trong câu hỏi; câu hỏi diễn đạt khác nhiều so với nhãn sẽ không được liên kết.
+1. **Nhiễu giữa các lần chạy (±1–2 câu).** Các câu từng sai lẻ tẻ: `p2` q1, q12, q13, q24, q27; `p4_q019`. Nguyên nhân: model đôi khi chọn nhầm ô hoặc dùng regex không an toàn; chưa có biện pháp rẻ nào chứng minh giảm được (biểu quyết và `seed` đều đã thử, không hiệu quả).
+2. **Định dạng đáp án phụ thuộc ngôn ngữ**: bộ định dạng số thập phân chỉ nhận cụm tiếng Anh; câu tiếng Hàn/Trung dựa vào việc model tự định dạng (`14.2` thay vì `14.20` ở p2 q27 thỉnh thoảng).
+3. **Tiền xử lý chưa phủ hết bố cục lạ.** Một số bảng tài chính (`p2_t09`, `p2_t10`) xếp nhóm cha/con chưa chính xác (ví dụ `Total assets...` nằm dưới nhóm `Available-for-sale ...`).
+4. **Entity linking dựa vào việc nhãn của bảng xuất hiện nguyên văn (hoặc đủ các từ) trong câu hỏi**; câu hỏi diễn đạt khác nhiều so với nhãn sẽ không được liên kết.
+5. **Mới đo trên 2 bộ công khai (50 câu)**, chưa kiểm thử trên tập ẩn thật; chưa có **template nộp bài của BTC** để đối chiếu.
 6. **Chưa đo `reasoning.effort` mức `low`/`medium`** (hiện chỉ so `none` và mặc định bật).
 7. **Tên đội** khi đóng gói (`scripts/package_submission.py`) còn dùng giá trị mẫu `team001`.
