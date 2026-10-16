@@ -21,8 +21,6 @@ class Settings(BaseSettings):
     # Pipeline Settings
     max_retries: int = 3
     enable_direct_fallback: bool = True
-    self_consistency: bool = False  # bật bằng SELF_CONSISTENCY=true: ~2x token/thời gian, chưa chứng minh tăng EM
-    sc_temperature: float = 0.3
     fallback_table_chars: int = 6000
     max_output_tokens: int = 2048
     execution_timeout: int = 15

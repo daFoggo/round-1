@@ -130,7 +130,7 @@ class QAPipeline:
                 self.raw_cache[file_path] = {}
         return self.raw_cache[file_path]
 
-    def direct_answer(self, dfs: Dict[str, pd.DataFrame], query: str, temperature: float = 0.0) -> str:
+    def direct_answer(self, dfs: Dict[str, pd.DataFrame], query: str) -> str:
         """Đường lui cuối: hỏi thẳng LLM trên bảng dạng CSV cắt gọn khi mọi lần sinh code đều thất bại."""
         parts, budget = [], settings.fallback_table_chars
         for name, d in dfs.items():
@@ -140,43 +140,13 @@ class QAPipeline:
                   "question. Reply with the final answer only, no explanation.\n\n"
                   + "\n".join(parts) + f"\n\nQUESTION: {query}\nANSWER:")
         try:
-            return self.llm.generate_response(prompt, temperature=temperature).strip().splitlines()[0].strip()
+            return self.llm.generate_response(prompt).strip().splitlines()[0].strip()
         except Exception:
             return ""
 
     def answer_query(self, file_path: str, query: str, max_retries: Optional[int] = None) -> Dict[str, Any]:
-        """Biểu quyết thích ứng (adaptive self-consistency): 2 mẫu; trùng nhau thì dừng, khác nhau mới thêm mẫu thứ 3.
-        Qwen không hoàn toàn xác định nên một mẫu đơn lẻ dao động ±1-2 câu giữa các lần chạy."""
         retries_limit = max_retries if max_retries is not None else self.max_retries
         start_time = time.time()
-        runs = [self._single_run(file_path, query, retries_limit, 0.0)]
-        if settings.self_consistency:
-            runs.append(self._single_run(file_path, query, retries_limit, settings.sc_temperature))
-            if self._norm(runs[0]["answer"]) != self._norm(runs[1]["answer"]):
-                runs.append(self._single_run(file_path, query, retries_limit, settings.sc_temperature))
-        best = self._majority(runs)
-        best = dict(best)
-        best["samples"] = len(runs)
-        best["elapsed_seconds"] = round(time.time() - start_time, 2)
-        return best
-
-    @staticmethod
-    def _norm(ans: str) -> str:
-        return " ".join(str(ans).lower().split())
-
-    def _majority(self, runs):
-        """Đáp án xuất hiện nhiều nhất (trong các mẫu hợp lệ); hoà thì lấy mẫu đầu tiên (temperature 0)."""
-        valid = [r for r in runs if self._norm(r["answer"]) not in ("", "nan", "none")] or runs
-        counts: Dict[str, int] = {}
-        for r in valid:
-            counts[self._norm(r["answer"])] = counts.get(self._norm(r["answer"]), 0) + 1
-        top = max(counts.values())
-        for r in valid:  # thứ tự mẫu: mẫu temperature 0 ưu tiên khi hoà
-            if counts[self._norm(r["answer"])] == top:
-                return r
-        return runs[0]
-
-    def _single_run(self, file_path: str, query: str, retries_limit: int, temperature: float) -> Dict[str, Any]:
         dfs = self.get_parsed_workbook(file_path)
         table_summary = generate_table_summary(dfs)
 
@@ -191,7 +161,7 @@ QUESTION:
 Write Python code to compute the answer and assign it to `FINAL_ANSWER`.
 """
 
-        raw_response = self.llm.generate_response(user_prompt, system_prompt=SYSTEM_PROMPT, temperature=temperature)
+        raw_response = self.llm.generate_response(user_prompt, system_prompt=SYSTEM_PROMPT)
         code = self.llm.extract_python_code(raw_response)
 
         raw_dfs = self.get_raw_workbook(file_path)
@@ -222,16 +192,17 @@ Please fix the code to correctly compute the answer for the question:
 
 Output ONLY the corrected Python code inside ```python ... ``` block.
 """
-            raw_response = self.llm.generate_response(correction_prompt, system_prompt=SYSTEM_PROMPT, temperature=temperature)
+            raw_response = self.llm.generate_response(correction_prompt, system_prompt=SYSTEM_PROMPT)
             code = self.llm.extract_python_code(raw_response)
             raw_result, error_trace, stdout = execute_generated_code(code, dfs, file_path, raw_dfs=raw_dfs)
 
         used_fallback = False
         if is_invalid_result(raw_result, error_trace) and settings.enable_direct_fallback:
             used_fallback = True
-            raw_result, error_trace = self.direct_answer(dfs, query, temperature), None
+            raw_result, error_trace = self.direct_answer(dfs, query), None
 
         formatted = format_answer(raw_result, query)
+        elapsed = time.time() - start_time
 
         return {
             "query": query,
@@ -241,4 +212,5 @@ Output ONLY the corrected Python code inside ```python ... ``` block.
             "retries": retries_used,
             "direct_fallback": used_fallback,
             "error": error_trace,
+            "elapsed_seconds": round(elapsed, 2),
         }

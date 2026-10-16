@@ -29,7 +29,7 @@ class LLMClient:
     def active_model(self) -> str:
         return self.openrouter_model
 
-    def generate_response(self, prompt: str, system_prompt: Optional[str] = None, temperature: float = 0.0) -> str:
+    def generate_response(self, prompt: str, system_prompt: Optional[str] = None) -> str:
         if not self.openrouter_key:
             raise ValueError("OpenRouter API key is not configured (--openrouter-key / OPENROUTER_API_KEY).")
         url = f"{self.openrouter_base_url}/chat/completions"
@@ -47,7 +47,7 @@ class LLMClient:
         payload = {
             "model": self.openrouter_model,
             "messages": messages,
-            "temperature": temperature,
+            "temperature": 0.0,
             "max_tokens": settings.max_output_tokens,
         }
         # Reasoning được tính vào token và làm chậm mạnh: 'none' = tắt hoàn toàn
